@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2013-2021 Canonical, Ltd.
- * Copyright (C) 2022-2023 Colin Ian King
+ * Copyright (C) 2023      Colin Ian King
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -17,16 +16,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
-#include <inttypes.h>
-#include "../core-version.h"
-
-#if NEED_GNUC(4,0,0)
+#if defined(__x86_64__) || defined(__x86_64) ||	\
+    defined(__amd64__)  || defined(__amd64)
 int main(void)
 {
-	const __uint128_t ui128 = 0;
-	const __int128_t  i128 = 0;
+	__asm__ __volatile__("serialize");
+
+	return 0;
 }
 #else
-#error need GCC 4.0 or above
+#error not an x86 so no tpause instruction
 #endif
 

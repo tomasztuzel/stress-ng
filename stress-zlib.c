@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-arch.h"
+#include "core-asm-x86.h"
 #include "core-cpu.h"
 #include "core-target-clones.h"
 
@@ -472,23 +473,7 @@ static void TARGET_CLONES stress_rand_data_fixed(
 	}
 }
 
-#if defined(HAVE_ASM_X86_RDRAND) &&		\
-    defined(STRESS_ARCH_X86_64)
-/*
- *  rdrand64()
- *	read 64 bit random value
- */
-static inline uint64_t rand64(void)
-{
-	uint64_t        ret;
-
-	__asm__ __volatile__("1:;\n\
-	rdrand %0;\n\
-	jnc 1b;\n":"=r"(ret));
-
-	return ret;
-}
-
+#if defined(HAVE_ASM_X86_RDRAND)
 /*
  *  stress_rand_data_rdrand()
  *	fill buffer with data from x86 rdrand instruction
@@ -505,10 +490,10 @@ static void stress_rand_data_rdrand(
 
 	if (stress_cpu_x86_has_rdrand()) {
 		while (ptr < end) {
-			*(ptr++) = rand64();
-			*(ptr++) = rand64();
-			*(ptr++) = rand64();
-			*(ptr++) = rand64();
+			*(ptr++) = stress_asm_x86_rdrand();
+			*(ptr++) = stress_asm_x86_rdrand();
+			*(ptr++) = stress_asm_x86_rdrand();
+			*(ptr++) = stress_asm_x86_rdrand();
 		}
 	} else {
 		while (ptr < end) {
@@ -615,6 +600,29 @@ static void TARGET_CLONES stress_rand_data_gray(
 	val = v;
 }
 
+/*
+ *  stress_rand_data_gray()
+ *	fill buffer with incrementing 16 bit values
+ *
+ */
+static void TARGET_CLONES stress_rand_data_inc16(
+	const stress_args_t *args,
+	uint64_t *RESTRICT data,
+	uint64_t *RESTRICT data_end)
+{
+	register uint16_t val = stress_mwc16();
+	register uint16_t *ptr = (uint16_t *)data;
+	register const uint16_t *end = (uint16_t *)data_end;
+
+	(void)args;
+
+	while (ptr < end) {
+		*(ptr++) = val++;
+		*(ptr++) = val++;
+		*(ptr++) = val++;
+		*(ptr++) = val++;
+	}
+}
 
 /*
  *  stress_rand_data_parity()
@@ -1158,9 +1166,10 @@ static const stress_zlib_rand_data_info_t zlib_rand_data_methods[] = {
 	{ "binary",	stress_rand_data_binary },
 	{ "brown",	stress_rand_data_brown },
 	{ "double",	stress_rand_data_double },
+	{ "fixed",	stress_rand_data_fixed },
 	{ "gcr",	stress_rand_data_gcr },
 	{ "gray",	stress_rand_data_gray },
-	{ "fixed",	stress_rand_data_fixed },
+	{ "inc16",	stress_rand_data_inc16 },
 	{ "latin",	stress_rand_data_latin },
 #if defined(HAVE_INT128_T)
 	{ "lehmer",	stress_rand_data_lehmer },

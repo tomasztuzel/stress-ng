@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2013-2021 Canonical, Ltd.
- * Copyright (C) 2022-2023 Colin Ian King
+ * Copyright (C) 2023      Colin Ian King.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -17,16 +16,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
-#include <inttypes.h>
-#include "../core-version.h"
+#ifndef CORE_ASM_PPC64_H
+#define CORE_ASM_PPC64_H
 
-#if NEED_GNUC(4,0,0)
-int main(void)
+#if defined(STRESS_ARCH_PPC64)
+
+#if defined(HAVE_ASM_PPC64_DARN)
+static inline uint64_t stress_asm_ppc64_darn(void)
 {
-	const __uint128_t ui128 = 0;
-	const __int128_t  i128 = 0;
+	uint64_t val;
+
+	/* Unconditioned raw deliver a raw number */
+	__asm__ __volatile__("darn %0, 0\n" : "=r"(val) :);
+	return val;
 }
-#else
-#error need GCC 4.0 or above
 #endif
 
+/* #if defined(STRESS_ARCH_PPC64) */
+#endif
+
+/* #ifndef CORE_ASM_PPC64_H */
+#endif

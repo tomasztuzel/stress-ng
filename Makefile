@@ -17,12 +17,18 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 
-VERSION=0.15.02
+VERSION=0.15.03
 #
-# Codename "deluded hurling snail"
+# Codename "hydrophonic purple squid"
 #
 
-CFLAGS += -Wall -Wextra -DVERSION='"$(VERSION)"' -O2 -std=gnu99
+CFLAGS += -Wall -Wextra -DVERSION='"$(VERSION)"' -std=gnu99
+#
+# Default -O2 if optimization level not defined
+#
+ifeq "$(findstring -O,$(CFLAGS))" ""
+	CFLAGS += -O2
+endif
 
 #
 # Pedantic flags
@@ -99,6 +105,8 @@ BASHDIR=/usr/share/bash-completion/completions
 #
 HEADERS = \
 	core-arch.h \
+	core-asm-x86.h \
+	core-asm-ppc64.h \
 	core-bitops.h \
 	core-builtin.h \
 	core-cache.h \
@@ -108,12 +116,10 @@ HEADERS = \
 	core-hash.h \
 	core-icache.h \
 	core-io-priority.h \
-	core-io-uring.c \
 	core-nt-load.h \
 	core-nt-store.h \
 	core-net.h \
 	core-perf.h \
-	core-personality.c \
 	core-pragma.h \
 	core-pthread.h \
 	core-put.h \
@@ -126,9 +132,9 @@ HEADERS = \
 	core-thermal-zone.h \
 	core-thrash.h \
 	core-vecmath.h \
+	core-version.h \
 	stress-af-alg-defconfigs.h \
-	stress-ng.h \
-	stress-version.h
+	stress-ng.h
 
 #
 #  Build time generated header files
@@ -454,6 +460,7 @@ CORE_SRC = \
 	core-helper.c \
 	core-icache.c \
 	core-ignite-cpu.c \
+	core-io-uring.c \
 	core-io-priority.c \
 	core-job.c \
 	core-killpid.c \
@@ -489,20 +496,12 @@ CORE_SRC = \
 	stress-ng.c
 
 SRC = $(CORE_SRC) $(STRESS_SRC)
-OBJS = $(SRC:.c=.o)
+OBJS = apparmor-data.o
+OBJS += $(SRC:.c=.o)
 
 APPARMOR_PARSER=/sbin/apparmor_parser
 
-all: makeconfig
-	$(MAKE) stress-ng VERBOSE=$(VERBOSE)
-
-#
-#  Load in and set flags based on config
-#
--include config
-CFLAGS += $(CONFIG_CFLAGS)
-LDFLAGS += $(CONFIG_LDFLAGS)
-OBJS += $(CONFIG_OBJS)
+all: config.h stress-ng
 
 .SUFFIXES: .c .o
 
@@ -512,37 +511,46 @@ OBJS += $(CONFIG_OBJS)
 	$(PRE_Q)echo "CC $<"
 	$(PRE_V)$(CC) $(CFLAGS) -c -o $@ $<
 
-stress-ng: $(OBJS)
+stress-ng: config.h $(OBJS)
 	$(PRE_Q)echo "LD $@"
-	$(PRE_V)$(CC) $(CPPFLAGS) $(CFLAGS) $(OBJS) -lm $(LDFLAGS) -o $@
+	$(eval LDFLAGS_EXTRA := $(shell cat config | grep CONFIG_LDFLAGS | sed 's/CONFIG_LDFLAGS += //' | tr '\n' ' '))
+	$(PRE_V)$(CC) $(CPPFLAGS) $(CFLAGS) $(OBJS) -lm $(LDFLAGS) $(LDFLAGS_EXTRA) -o $@
 
-config.h:
+config.h config:
+	$(PRE_Q)echo "Generating config.."
 	$(MAKE) CC="$(CC)" STATIC=$(STATIC) -f Makefile.config
 
-.PHONY:
 makeconfig: config.h
 
 #
 #  generate apparmor data using minimal core utils tools from apparmor
 #  parser output
 #
-apparmor-data.o: usr.bin.pulseaudio.eg
-	$(PRE_V)$(APPARMOR_PARSER) -Q usr.bin.pulseaudio.eg  -o apparmor-data.bin >/dev/null 2>&1
+apparmor-data.o: usr.bin.pulseaudio.eg config.h
+	$(PRE_Q)rm -f apparmor-data.bin
+	$(PRE_V)if [ -n "$(shell grep '^#define HAVE_APPARMOR' config.h)" ]; then \
+		echo "Generating AppArmor profile from usr.bin.pulseaudio.eg"; \
+		$(APPARMOR_PARSER) -Q usr.bin.pulseaudio.eg  -o apparmor-data.bin >/dev/null 2>&1 ; \
+	else \
+		echo "Generating empty AppArmor profile"; \
+		touch apparmor-data.bin; \
+	fi
 	$(PRE_V)echo "#include <stddef.h>" > apparmor-data.c
 	$(PRE_V)echo "char g_apparmor_data[]= { " >> apparmor-data.c
 	$(PRE_V)od -tx1 -An -v < apparmor-data.bin | \
 		sed 's/[0-9a-f][0-9a-f]/0x&,/g' | \
 		sed '$$ s/.$$//' >> apparmor-data.c
 	$(PRE_V)echo "};" >> apparmor-data.c
+	$(PRE_V)rm -f apparmor-data.bin
 	$(PRE_V)echo "const size_t g_apparmor_data_len = sizeof(g_apparmor_data);" >> apparmor-data.c
-	$(PRE_Q)echo "CC $<"
+	$(PRE_Q)echo "CC apparmor-data.c"
 	$(PRE_V)$(CC) -c apparmor-data.c -o apparmor-data.o
-	$(PRE_V)rm -rf apparmor-data.c apparmor-data.bin
+	$(PRE_V)rm -f apparmor-data.c
 
 #
 #  extract the PER_* personality enums
 #
-personality.h:
+personality.h: config.h
 	$(PRE_V)$(CPP) $(CONFIG_CFLAGS) core-personality.c | $(GREP) -e "PER_[A-Z0-9]* =.*," | cut -d "=" -f 1 \
 	| sed "s/.$$/,/" > personality.h
 	$(PRE_Q)echo "MK personality.h"
@@ -553,21 +561,21 @@ stress-personality.c: personality.h
 #  extract IORING_OP enums and #define HAVE_ prefixed values
 #  so we can check if these enums exist
 #
-io-uring.h:
+io-uring.h: config.h
 	$(PRE_V)$(CPP) $(CFLAGS) core-io-uring.c  | $(GREP) IORING_OP | sed 's/,//' | \
 	sed 's/.*\(IORING_OP_.*\)/#define HAVE_\1/' > io-uring.h
 	$(PRE_Q)echo "MK io-uring.h"
 
 stress-io-uring.c: io-uring.h
 
-core-perf.o: core-perf.c core-perf-event.c
+core-perf.o: core-perf.c core-perf-event.c config.h
 	$(PRE_V)$(CC) $(CFLAGS) -E core-perf-event.c | $(GREP) "PERF_COUNT" | \
 	sed 's/,/ /' | sed s/'^ *//' | \
 	awk {'print "#define STRESS_" $$1 " (1)"'} > core-perf-event.h
 	$(PRE_Q)echo CC $<
 	$(PRE_V)$(CC) $(CFLAGS) -c -o $@ $<
 
-stress-vecmath.o: stress-vecmath.c
+stress-vecmath.o: stress-vecmath.c config.h
 	$(PRE_Q)echo CC $<
 	$(PRE_V)$(CC) $(CFLAGS) -fno-builtin -c -o $@ $<
 

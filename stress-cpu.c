@@ -445,6 +445,16 @@ static void HOT OPTIMIZE3 stress_cpu_logmap(const char *name)
 #if defined(HAVE_SRAND48) &&	\
     defined(HAVE_LRAND48) &&	\
     defined(HAVE_DRAND48)
+
+/*
+ * Some libc's such as OpenBSD don't implement rand48 the same
+ * as linux's glibc, so beware of different implementations with
+ * the verify mode checking.
+ */
+#if defined(__linux__) && 	\
+    defined(__GLIBC__)
+#define STRESS_CPU_RAND48_VERIFY
+#endif
 /*
  *  stress_cpu_rand48()
  *	generate random values using rand48 family of functions
@@ -453,7 +463,11 @@ static void HOT OPTIMIZE3 stress_cpu_rand48(const char *name)
 {
 	int i;
 	double d = 0;
-	long int l = 0;
+	long long int l = 0;
+#if defined(STRESS_CPU_RAND48_VERIFY)
+	double d_expected_sum = 8184.618041;
+	long long int l_expected_sum = 17522760427916;
+#endif
 
 	(void)name;
 
@@ -462,6 +476,17 @@ static void HOT OPTIMIZE3 stress_cpu_rand48(const char *name)
 		d += drand48();
 		l += lrand48();
 	}
+
+#if defined(STRESS_CPU_RAND48_VERIFY)
+	if (g_opt_flags & OPT_FLAGS_VERIFY) {
+		double d_error = d - d_expected_sum;
+		if (fabs(d_error) > 0.0001)
+			pr_fail("%s: drand48 error detected, failed sum\n", name);
+		if (l != l_expected_sum)
+			pr_fail("%s: lrand48 error detected, failed sum\n", name);
+	}
+#endif
+
 	stress_double_put(d);
 	stress_uint64_put((uint64_t)l);
 }

@@ -144,7 +144,7 @@
 #include <linux/posix_types.h>
 #endif
 
-#include "stress-version.h"
+#include "core-version.h"
 
 #if defined(CHECK_UNEXPECTED) && 	\
     defined(HAVE_PRAGMA) &&		\
@@ -1397,6 +1397,7 @@ typedef enum {
 	OPT_ipsec_mb_ops,
 	OPT_ipsec_mb_feature,
 	OPT_ipsec_mb_jobs,
+	OPT_ipsec_mb_method,
 
 	OPT_itimer,
 	OPT_itimer_ops,

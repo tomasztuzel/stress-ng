@@ -16,6 +16,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 #include "stress-ng.h"
+#include "core-asm-x86.h"
 #include "core-arch.h"
 #include "core-cache.h"
 #include "core-put.h"
@@ -85,7 +86,7 @@ static void stress_syncload_nop(void)
 #if defined(HAVE_ASM_X86_PAUSE)
 static void stress_syncload_pause(void)
 {
-	__asm__ __volatile__("pause;\n");
+	stress_asm_x86_pause();
 }
 #endif
 
@@ -96,19 +97,14 @@ static void stress_syncload_yield(void)
 }
 #endif
 
-#if !defined(__TINYC__) &&	\
-    defined(STRESS_ARCH_X86_64)
+#if defined(STRESS_ARCH_X86)
 static void stress_syncload_rdrand(void)
 {
 	if (stress_sysload_x86_has_rdrand) {
-		int64_t        ret;
-
-		__asm__ __volatile__("1:;\n\
-			     rdrand %0;\n\
-			     jnc 1b;\n":"=r"(ret));
-		return;
+		(void)stress_asm_x86_rdrand();
+	} else {
+		stress_syncload_nop();
 	}
-	stress_syncload_nop();
 }
 #endif
 

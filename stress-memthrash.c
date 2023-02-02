@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-arch.h"
+#include "core-asm-x86.h"
 #include "core-cache.h"
 #include "core-nt-store.h"
 #include "core-pthread.h"
@@ -94,17 +95,10 @@ static stress_memthrash_primes_t stress_memthrash_primes[MEM_SIZE_PRIMES];
       defined(__ATOMIC_SEQ_CST) &&			\
       NEED_GNUC(4,7,0) && 				\
       defined(STRESS_ARCH_ARM)))
-
 #if defined(HAVE_ATOMIC_ADD_FETCH)
-#define MEM_LOCK(ptr, inc) 				\
-do {							\
-	__atomic_add_fetch(ptr, inc, __ATOMIC_SEQ_CST);	\
-} while (0)
+#define MEM_LOCK(ptr, inc)	__atomic_add_fetch(ptr, inc, __ATOMIC_SEQ_CST)
 #else
-#define MEM_LOCK(ptr, inc)				\
-do {							\
-	asm volatile("lock addl %1,%0" : "+m" (*ptr) : "ir" (inc));	\
-} while (0);
+#define MEM_LOCK(ptr, inc)	stress_asm_x86_lock_add(ptr, inc)
 #endif
 #endif
 
@@ -187,6 +181,28 @@ static void stress_memthrash_memset(
 	(void)memset((void *)mem, stress_mwc8(), mem_size);
 #endif
 }
+
+#if defined(HAVE_ASM_X86_REP_STOSD)
+static inline void OPTIMIZE3 stress_memtrash_memsetstosd(
+	const stress_memthrash_context_t *context,
+	const size_t mem_size)
+{
+	register void *p = (void *)mem;
+	register const uint32_t l = (uint32_t)(mem_size >> 2);
+
+	(void)context;
+
+	__asm__ __volatile__(
+		"mov $0x00000000,%%eax\n;"
+		"mov %0,%%rdi\n;"
+		"mov %1,%%ecx\n;"
+		"rep stosl %%eax,%%es:(%%rdi);\n"	/* gcc calls it stosl and not stosw */
+		:
+		: "r" (p),
+		  "r" (l)
+		: "ecx","rdi","eax");
+}
+#endif
 
 static void stress_memthrash_memmove(
 	const stress_memthrash_context_t *context,
@@ -656,6 +672,9 @@ static const stress_memthrash_method_info_t memthrash_methods[] = {
 	{ "memmove",	stress_memthrash_memmove },
 	{ "memset",	stress_memthrash_memset },
 	{ "memset64",	stress_memthrash_memset64 },
+#if defined(HAVE_ASM_X86_REP_STOSD)
+	{ "memsetstosd",stress_memtrash_memsetstosd },
+#endif
 	{ "mfence",	stress_memthrash_mfence },
 #if defined(HAVE_MEMTHRASH_NUMA)
 	{ "numa",	stress_memthrash_numa },
