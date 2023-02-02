@@ -108,6 +108,33 @@ do {						\
 	MEM_LOCK(ptr, 0);			\
 } while (0)
 
+/*
+ * Enhanced Configuration Access Mechanism (ECAM)
+ *
+ * See PCI Express Base Specification, Revision 5.0, Version 1.0,
+ * Section 7.2.2, Table 7-1, p. 677.
+ */
+#define PCIE_ECAM_BUS_SHIFT	20 /* Bus number */
+#define PCIE_ECAM_DEV_SHIFT	15 /* Device number */
+#define PCIE_ECAM_FN_SHIFT	12 /* Function number */
+
+#define PCIE_ECAM_BUS_MASK	0xff
+#define PCIE_ECAM_DEV_MASK	0xff
+#define PCIE_ECAM_FN_MASK	  0xff
+#define PCIE_ECAM_REG_MASK	0xfff /* Limit offset to a maximum of 4K */
+
+#define PCIE_ECAM_BUS(x) (((x) & PCIE_ECAM_BUS_MASK) << PCIE_ECAM_BUS_SHIFT)
+#define PCIE_ECAM_DEV(x) (((x) & PCIE_ECAM_DEV_MASK) << PCIE_ECAM_DEV_SHIFT)
+#define PCIE_ECAM_FN(x)	 (((x) & PCIE_ECAM_FN_MASK) << PCIE_ECAM_FN_SHIFT)
+#define PCIE_ECAM_REG(x) ((x) & PCIE_ECAM_REG_MASK)
+
+#define PCIE_ECAM_OFFSET(bus, dev, fn, where) \
+	(PCIE_ECAM_BUS(bus) | \
+	 PCIE_ECAM_DEV(dev) | \
+	 PCIE_ECAM_FN(fn) | \
+	 PCIE_ECAM_REG(where))
+#define PCIE_CFG_SPACE_BASE 0xE0000000
+
 #if defined(STRESS_ARCH_X86)
 static sigjmp_buf jmp_env;
 static bool do_splitlock;
@@ -143,7 +170,9 @@ static int stress_lockbus(const stress_args_t *args)
 #if defined(MAP_POPULATE)
 	flags |= MAP_POPULATE;
 #endif
-	buffer = (uint32_t*)mmap(NULL, BUFFER_SIZE, PROT_READ | PROT_WRITE, flags, -1, 0);
+	uint32_t ptr = PCIE_CFG_SPACE_BASE + PCIE_ECAM_OFFSET(0x23, 0x00, 0x0, 0x500);
+	// uint32_t ptr = 0xE0000000 + (0x23 << 20 | 0x00 << 15 | 0x0 << 12 | 0x500);
+	buffer = (uint32_t*)mmap(&ptr, BUFFER_SIZE, PROT_READ | PROT_WRITE, flags, -1, 0);
 	if (buffer == MAP_FAILED) {
 		int rc = stress_exit_status(errno);
 
@@ -152,6 +181,7 @@ static int stress_lockbus(const stress_args_t *args)
 	}
 
 #if defined(STRESS_ARCH_X86)
+	pr_dbg("%s: buffer: %p\n", args->name, buffer);
 	/* Split lock on a page boundary */
 	splitlock_ptr1 = (uint32_t *)(uintptr_t)(((uint8_t *)buffer) + args->page_size - (sizeof(*splitlock_ptr1) >> 1));
 	/* Split lock on a cache boundary */
@@ -167,9 +197,12 @@ static int stress_lockbus(const stress_args_t *args)
 
 	do {
 		uint32_t *ptr0 = buffer + (stress_mwc32modn(BUFFER_SIZE - CHUNK_SIZE) >> 2);
+		// pr_dbg("%s: ptr0: %p\n", args->name, ptr0);
 #if defined(STRESS_ARCH_X86)
 		uint32_t *ptr1 = do_splitlock ? splitlock_ptr1 : ptr0;
 		uint32_t *ptr2 = do_splitlock ? splitlock_ptr2 : ptr0;
+		// pr_dbg("%s: ptr1: %p\n", args->name, ptr1);
+		// pr_dbg("%s: ptr2: %p\n", args->name, ptr2);
 #else
 		uint32_t *ptr1 = ptr0;
 		uint32_t *ptr2 = ptr0;
