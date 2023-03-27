@@ -40,15 +40,30 @@ static const stress_opt_set_func_t opt_set_funcs[] = {
 #if (((defined(__GNUC__) || defined(__clang__)) && 	\
        defined(STRESS_ARCH_X86)) ||			\
      (defined(__GNUC__) && 				\
-      defined(HAVE_ATOMIC_ADD_FETCH) &&			\
+      (defined(HAVE_ATOMIC_ADD_FETCH) ||		\
+       defined(HAVE_ATOMIC_FETCH_ADD)) &&		\
       defined(__ATOMIC_SEQ_CST) &&			\
       NEED_GNUC(4,7,0) && 				\
-      defined(STRESS_ARCH_ARM)))
+      (defined(STRESS_ARCH_ALPHA) ||			\
+       defined(STRESS_ARCH_ARM) ||			\
+       defined(STRESS_ARCH_HPPA) ||			\
+       defined(STRESS_ARCH_M68K) ||			\
+       defined(STRESS_ARCH_MIPS) ||			\
+       defined(STRESS_ARCH_PPC64) ||			\
+       defined(STRESS_ARCH_RISCV) ||			\
+       defined(STRESS_ARCH_S390) ||			\
+       defined(STRESS_ARCH_SH4) ||			\
+       defined(STRESS_ARCH_SPARC)) ))
 
 #if defined(HAVE_ATOMIC_ADD_FETCH)
 #define MEM_LOCK(ptr, inc)				\
 do {							\
 	 __atomic_add_fetch(ptr, inc, __ATOMIC_SEQ_CST);\
+} while (0)
+#elif defined(HAVE_ATOMIC_FETCH_ADD)
+#define MEM_LOCK(ptr, inc)				\
+do {							\
+	 __atomic_fetch_add(ptr, inc, __ATOMIC_SEQ_CST);\
 } while (0)
 #else
 #define MEM_LOCK(ptr, inc)				\

@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-pragma.h"
 #include "core-put.h"
 #include "core-target-clones.h"
 
@@ -35,11 +36,6 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_VLA_ARG)
-
-typedef struct {
-	double	duration;
-	double	count;
-} stress_matrix_metrics_t;
 
 typedef float	stress_matrix_type_t;
 
@@ -147,6 +143,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_add(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = a[i][j] + b[i][j];
 		}
@@ -189,6 +186,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_sub(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = a[i][j] - b[i][j];
 		}
@@ -233,6 +231,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_trans(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = a[j][i];
 		}
@@ -280,6 +279,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_mult(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = v * a[i][j];
 		}
@@ -328,6 +328,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_div(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = a[i][j] / v;
 		}
@@ -515,6 +516,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_mean(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = (a[i][j] + b[i][j]) / (stress_matrix_type_t)2.0;
 		}
@@ -535,7 +537,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_yx_mean(
 
 	for (j = 0; j < n; j++) {
 		register size_t i;
- 
+
 		for (i = 0; i < n; i++) {
 			r[i][j] = (a[i][j] + b[i][j]) / (stress_matrix_type_t)2.0;
 		}
@@ -656,6 +658,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_identity(
 	for (i = 0; i < n; i++) {
 		register size_t j;
 
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < n; j++) {
 			r[i][j] = (i == j) ? 1.0 : 0.0;
 		}
@@ -706,6 +709,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_matrix_xy_square(
 		for (j = 0; j < n; j++) {
 			register size_t k;
 
+PRAGMA_UNROLL_N(8)
 			for (k = 0; k < n; k++) {
 				r[i][j] += a[i][k] * a[k][j];
 			}
@@ -786,7 +790,7 @@ static const stress_matrix_method_info_t matrix_methods[] = {
 	{ "zero",		{ stress_matrix_xy_zero,	stress_matrix_yx_zero } },
 };
 
-static stress_matrix_metrics_t matrix_metrics[SIZEOF_ARRAY(matrix_methods)];
+static stress_metrics_t matrix_metrics[SIZEOF_ARRAY(matrix_methods)];
 
 /*
  *  stress_matrix_xy_all()

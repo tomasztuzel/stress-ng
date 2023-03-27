@@ -360,12 +360,11 @@ static int open_flag_perm(
 		return fd;
 	}
 
-#if defined(O_CREATE)
-	if (!(flags & O_CREATE)) {
 #if defined(O_DIRECTORY)
+	if (!(flags & O_CREAT)) {
 		if (flags & O_DIRECTORY) {
-			(void)mkdir(filename);
-		} else
+			(void)mkdir(filename, mode);
+		} else {
 			fd = open_arg3(filename, O_CREAT | O_RDWR, mode, duration, count);
 			if (fd >= 0)
 				(void)close(fd);
@@ -374,8 +373,7 @@ static int open_flag_perm(
 #else
 	fd = open_arg3(filename, O_CREAT | O_RDWR, mode, duration, count);
 	if (fd >= 0)
-		void)close(fd);
-#endif
+		(void)close(fd);
 #endif
 	fd = open_arg3(filename, flags, mode, duration, count);
 #if defined(O_DIRECTORY)

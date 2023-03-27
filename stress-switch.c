@@ -71,9 +71,10 @@ static void stress_switch_rate(
 	const double t_end,
 	uint64_t counter)
 {
-	pr_inf("%s: (%s) %.2f nanosecs per context switch (based on parent run time)\n",
-		args->name, method,
-		((t_end - t_start) * STRESS_NANOSECOND) / (double)counter);
+	char msg[128];
+
+	(void)snprintf(msg, sizeof(msg), "nanosecs per context switch (%s method)", method);
+	stress_metrics_set(args, 0, msg, ((t_end - t_start) * STRESS_NANOSECOND) / (double)counter);
 }
 
 /*
@@ -139,6 +140,9 @@ static int stress_switch_pipe(
 	size_t buf_size;
 	char *buf;
 
+	if (stress_sig_stop_stressing(args->name, SIGPIPE) < 0)
+		return EXIT_FAILURE;
+
 	(void)memset(pipefds, 0, sizeof(pipefds));
 #if defined(HAVE_PIPE2) &&	\
     defined(O_DIRECT)
@@ -199,6 +203,8 @@ again:
 		free(buf);
 		return EXIT_FAILURE;
 	} else if (pid == 0) {
+		register const int fd = pipefds[0];
+
 		stress_parent_died_alarm();
 		(void)sched_settings_apply(true);
 
@@ -207,8 +213,8 @@ again:
 		while (keep_stressing_flag()) {
 			ssize_t ret;
 
-			ret = read(pipefds[0], buf, buf_size);
-			if (ret <= 0) {
+			ret = read(fd, buf, buf_size);
+			if (UNLIKELY(ret <= 0)) {
 				if (errno == 0)	/* ret == 0 case */
 					break;
 				if ((errno == EAGAIN) || (errno == EINTR))
@@ -226,6 +232,7 @@ again:
 		int status;
 		double t_start;
 		uint64_t delay = switch_delay;
+		register const int fd = pipefds[1];
 
 		/* Parent */
 		(void)close(pipefds[0]);
@@ -237,8 +244,8 @@ again:
 
 			inc_counter(args);
 
-			ret = write(pipefds[1], buf, buf_size);
-			if (ret <= 0) {
+			ret = write(fd, buf, buf_size);
+			if (UNLIKELY(ret <= 0)) {
 				if ((errno == EAGAIN) || (errno == EINTR))
 					continue;
 				if (errno == EPIPE)
@@ -251,13 +258,13 @@ again:
 				continue;
 			}
 
-			if (switch_freq)
+			if (UNLIKELY(switch_freq))
 				stress_switch_delay(args, switch_delay, threshold, t_start, &delay);
 		} while (keep_stressing(args));
 
 		stress_switch_rate(args, "pipe", t_start, stress_time_now(), get_counter(args));
 
-		(void)close(pipefds[0]);
+		(void)close(pipefds[1]);
 
 		(void)kill(pid, SIGKILL);
 		(void)shim_waitpid(pid, &status, 0);
@@ -322,14 +329,14 @@ again:
 			sem.sem_op = -1;
 			sem.sem_flg = SEM_UNDO;
 
-			if (semop(sem_id, &sem, 1) < 0)
+			if (UNLIKELY(semop(sem_id, &sem, 1) < 0))
 				break;
 
 			sem.sem_num = 0;
 			sem.sem_op = 1;
 			sem.sem_flg = SEM_UNDO;
 
-			if (semop(sem_id, &sem, 1) < 0)
+			if (UNLIKELY(semop(sem_id, &sem, 1) < 0))
 				break;
 		}
 		_exit(EXIT_SUCCESS);
@@ -348,10 +355,10 @@ again:
 			sem.sem_op = 1;
 			sem.sem_flg = SEM_UNDO;
 
-			if (semop(sem_id, &sem, 1) < 0)
+			if (UNLIKELY(semop(sem_id, &sem, 1) < 0))
 				break;
 
-			if (switch_freq)
+			if (UNLIKELY(switch_freq))
 				stress_switch_delay(args, switch_delay, threshold, t_start, &delay);
 
 			if (!keep_stressing(args))
@@ -360,7 +367,7 @@ again:
 			sem.sem_op = -1;
 			sem.sem_flg = SEM_UNDO;
 
-			if (semop(sem_id, &sem, 1) < 0)
+			if (UNLIKELY(semop(sem_id, &sem, 1) < 0))
 				break;
 		} while (keep_stressing(args));
 
@@ -432,7 +439,7 @@ again:
 
 		while (keep_stressing_flag()) {
 			msg.value++;
-			if (mq_send(mq, (char *)&msg, sizeof(msg), 0) < 0)
+			if (UNLIKELY(mq_send(mq, (char *)&msg, sizeof(msg), 0) < 0))
 				break;
 		}
 		_exit(EXIT_SUCCESS);
@@ -447,10 +454,10 @@ again:
 			unsigned int prio;
 
 			inc_counter(args);
-			if (mq_receive(mq, (char *)&msg, sizeof(msg), &prio) < 0)
+			if (UNLIKELY(mq_receive(mq, (char *)&msg, sizeof(msg), &prio) < 0))
 				break;
 
-			if (switch_freq)
+			if (UNLIKELY(switch_freq))
 				stress_switch_delay(args, switch_delay, threshold, t_start, &delay);
 		} while (keep_stressing(args));
 

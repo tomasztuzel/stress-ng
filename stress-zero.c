@@ -18,6 +18,11 @@
  *
  */
 #include "stress-ng.h"
+#include "core-pragma.h"
+
+#if defined(HAVE_LINUX_FS_H)
+#include <linux/fs.h>
+#endif
 
 static const stress_help_t help[] = {
 	{ NULL,	"zero N",	"start N workers reading /dev/zero" },
@@ -29,19 +34,21 @@ static const stress_help_t help[] = {
  *  stress_is_not_zero()
  *	checks if buffer is zero, buffer must be 64 bit aligned
  */
-static bool stress_is_not_zero(uint64_t *buffer, const size_t len)
+static bool OPTIMIZE3 stress_is_not_zero(uint64_t *buffer, const size_t len)
 {
 	register const uint8_t *end8 = ((uint8_t *)buffer) + len;
 	register uint8_t *ptr8;
 	register const uint64_t *end64 = buffer + (len / sizeof(uint64_t));
-	register uint64_t *ptr64;
+	register uint64_t *ptr64 ALIGNED(4096);
 
+PRAGMA_UNROLL_N(8)
 	for (ptr64 = buffer; ptr64 < end64; ptr64++) {
-		if (*ptr64)
+		if (UNLIKELY(*ptr64))
 			return true;
 	}
+PRAGMA_UNROLL_N(8)
 	for (ptr8 = (uint8_t *)ptr64; ptr8 < end8; ptr8++) {
-		if (*ptr8)
+		if (UNLIKELY(*ptr8))
 			return true;
 	}
 	return false;
@@ -116,27 +123,25 @@ static int stress_zero(const stress_args_t *args)
 	do {
 		ssize_t ret;
 		double t;
-#if defined(__linux__)
-		int32_t *ptr;
 		size_t i;
-#endif
 
-		t = stress_time_now();
-		ret = read(fd, rd_buffer, page_size);
-		if (UNLIKELY(ret < 0)) {
-			if ((errno == EAGAIN) || (errno == EINTR))
-				continue;
-			pr_fail("%s: read failed, errno=%d (%s)\n",
-				args->name, errno, strerror(errno));
-			(void)close(fd);
-			return EXIT_FAILURE;
-		} else {
-			duration += stress_time_now() - t;
+		for (i = 0; i < 64; i++) {
+			t = stress_time_now();
+			ret = read(fd, rd_buffer, page_size);
+			if (UNLIKELY(ret < 0)) {
+				if ((errno == EAGAIN) || (errno == EINTR))
+					continue;
+				pr_fail("%s: read failed, errno=%d (%s)\n",
+					args->name, errno, strerror(errno));
+				(void)close(fd);
+				return EXIT_FAILURE;
+			}
 			bytes += (double)ret;
-		}
-		if (stress_is_not_zero((uint64_t *)rd_buffer, (size_t)ret)) {
-			pr_fail("%s: non-zero value from a read of /dev/zero\n",
-				args->name);
+			duration += stress_time_now() - t;
+			if (stress_is_not_zero((uint64_t *)rd_buffer, (size_t)ret)) {
+				pr_fail("%s: non-zero value from a read of /dev/zero\n",
+					args->name);
+			}
 		}
 
 #if !defined(__minix__)
@@ -154,6 +159,8 @@ static int stress_zero(const stress_args_t *args)
 
 #if defined(__linux__)
 		for (i = 0; i < SIZEOF_ARRAY(mmap_flags); i++) {
+			int32_t *ptr;
+
 			/*
 			 *  check if we can mmap /dev/zero
 			 */
@@ -189,6 +196,21 @@ static int stress_zero(const stress_args_t *args)
 			VOID_RET(int, ioctl(fd, FIONBIO, &opt));
 			opt = 0;
 			VOID_RET(int, ioctl(fd, FIONBIO, &opt));
+		}
+#endif
+#if defined(FIONREAD)
+		{
+			int isz = 0;
+
+			/* Should be inappropriate ioctl */
+			VOID_RET(int, ioctl(fd, FIONREAD, &isz));
+		}
+#endif
+#if defined(FIGETBSZ)
+		{
+			int isz = 0;
+
+			VOID_RET(int, ioctl(fd, FIGETBSZ, &isz));
 		}
 #endif
 

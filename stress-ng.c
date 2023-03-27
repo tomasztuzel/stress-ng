@@ -560,6 +560,7 @@ static const struct option long_options[] = {
 	{ "kvm-ops",		1,	0,	OPT_kvm_ops },
 	{ "l1cache",		1,	0, 	OPT_l1cache },
 	{ "l1cache-line-size",	1,	0,	OPT_l1cache_line_size },
+	{ "l1cache-method",	1,	0,	OPT_l1cache_method },
 	{ "l1cache-ops",	1,	0,	OPT_l1cache_ops },
 	{ "l1cache-sets",	1,	0,	OPT_l1cache_sets},
 	{ "l1cache-size",	1,	0,	OPT_l1cache_size },
@@ -639,6 +640,7 @@ static const struct option long_options[] = {
 	{ "memhotplug-ops",	1,	0,	OPT_memhotplug_ops },
 	{ "memrate",		1,	0,	OPT_memrate },
 	{ "memrate-bytes",	1,	0,	OPT_memrate_bytes },
+	{ "memrate-flush",	0,	0,	OPT_memrate_flush },
 	{ "memrate-ops",	1,	0,	OPT_memrate_ops },
 	{ "memrate-rd-mbs",	1,	0,	OPT_memrate_rd_mbs },
 	{ "memrate-wr-mbs",	1,	0,	OPT_memrate_wr_mbs },
@@ -684,6 +686,12 @@ static const struct option long_options[] = {
 	{ "mmaphuge-ops",	1,	0,	OPT_mmaphuge_ops },
 	{ "mmapmany",		1,	0,	OPT_mmapmany },
 	{ "mmapmany-ops",	1,	0,	OPT_mmapmany_ops },
+	{ "module",		1,	0,	OPT_module},
+	{ "module-ops",		1,	0,	OPT_module_ops },
+	{ "module-name",	1,	0,	OPT_module_name},
+	{ "module-no-modver",	1,	0,	OPT_module_no_modver},
+	{ "module-no-vermag",	1,	0,	OPT_module_no_vermag,},
+	{ "module-no-unload",	0,	0,	OPT_module_no_unload},
 	{ "mprotect",		1,	0,	OPT_mprotect },
 	{ "mprotect-ops",	1,	0,	OPT_mprotect_ops },
 	{ "mq",			1,	0,	OPT_mq },
@@ -694,6 +702,7 @@ static const struct option long_options[] = {
 	{ "mremap-mlock",	0,	0,	OPT_mremap_mlock },
 	{ "mremap-ops",		1,	0,	OPT_mremap_ops },
 	{ "msg",		1,	0,	OPT_msg },
+	{ "msg-bytes",		1,	0,	OPT_msg_bytes },
 	{ "msg-ops",		1,	0,	OPT_msg_ops },
 	{ "msg-types",		1,	0,	OPT_msg_types },
 	{ "msync",		1,	0,	OPT_msync },
@@ -730,6 +739,7 @@ static const struct option long_options[] = {
 	{ "numa-ops",		1,	0,	OPT_numa_ops },
 	{ "oomable",		0,	0,	OPT_oomable },
 	{ "oom-avoid",		0,	0,	OPT_oom_avoid },
+	{ "oom-avoid-bytes",	1,	0,	OPT_oom_avoid_bytes },
 	{ "oom-pipe",		1,	0,	OPT_oom_pipe },
 	{ "oom-pipe-ops",	1,	0,	OPT_oom_pipe_ops },
 	{ "opcode",		1,	0,	OPT_opcode },
@@ -785,6 +795,7 @@ static const struct option long_options[] = {
 	{ "prctl-ops",		1,	0,	OPT_prctl_ops },
 	{ "prefetch",		1,	0,	OPT_prefetch },
 	{ "prefetch-l3-size",	1,	0,	OPT_prefetch_l3_size },
+	{ "prefetch-method",	1,	0,	OPT_prefetch_method },
 	{ "prefetch-ops",	1,	0,	OPT_prefetch_ops },
 	{ "priv-instr",		1,	0,	OPT_priv_instr },
 	{ "priv-instr-ops",	1,	0,	OPT_priv_instr_ops },
@@ -799,6 +810,7 @@ static const struct option long_options[] = {
 	{ "pty-max",		1,	0,	OPT_pty_max },
 	{ "pty-ops",		1,	0,	OPT_pty_ops },
 	{ "qsort",		1,	0,	OPT_qsort },
+	{ "qsort-method",	1,	0,	OPT_qsort_method },
 	{ "qsort-ops",		1,	0,	OPT_qsort_ops },
 	{ "qsort-size",		1,	0,	OPT_qsort_integers },
 	{ "quiet",		0,	0,	OPT_quiet },
@@ -1074,6 +1086,7 @@ static const struct option long_options[] = {
 	{ "tree-ops",		1,	0,	OPT_tree_ops },
 	{ "tree-size",		1,	0,	OPT_tree_size },
 	{ "tsc",		1,	0,	OPT_tsc },
+	{ "tsc-lfence",		0,	0,	OPT_tsc_lfence },
 	{ "tsc-ops",		1,	0,	OPT_tsc_ops },
 	{ "tsearch",		1,	0,	OPT_tsearch },
 	{ "tsearch-ops",	1,	0,	OPT_tsearch_ops },
@@ -1097,6 +1110,8 @@ static const struct option long_options[] = {
 	{ "udp-flood-domain",	1,	0,	OPT_udp_flood_domain },
 	{ "udp-flood-if",	1,	0,	OPT_udp_flood_if },
 	{ "udp-flood-ops",	1,	0,	OPT_udp_flood_ops },
+	{ "umount",		1,	0,	OPT_umount },
+	{ "umount-ops",		1,	0,	OPT_umount_ops },
 	{ "unshare",		1,	0,	OPT_unshare },
 	{ "unshare-ops",	1,	0,	OPT_unshare_ops },
 	{ "uprobe",		1,	0,	OPT_uprobe },
@@ -1163,6 +1178,8 @@ static const struct option long_options[] = {
 	{ "vmstat",		1,	0,	OPT_vmstat },
 	{ "wait",		1,	0,	OPT_wait },
 	{ "wait-ops",		1,	0,	OPT_wait_ops },
+	{ "waitcpu",		1,	0,	OPT_waitcpu },
+	{ "waitcpu-ops",	1,	0,	OPT_waitcpu_ops },
 	{ "watchdog",		1,	0,	OPT_watchdog },
 	{ "watchdog-ops",	1,	0,	OPT_watchdog_ops },
 	{ "wcs",		1,	0,	OPT_wcs},
@@ -1454,7 +1471,6 @@ static void MLOCKED_TEXT stress_stats_handler(int signum)
 {
 	static char buffer[80];
 	char *ptr = buffer;
-	int ret;
 	double min1, min5, min15;
 	size_t shmall, freemem, totalmem, freeswap, totalswap;
 
@@ -1463,6 +1479,8 @@ static void MLOCKED_TEXT stress_stats_handler(int signum)
 	*ptr = '\0';
 
 	if (stress_get_load_avg(&min1, &min5, &min15) == 0) {
+		int ret;
+
 		ret = snprintf(ptr, sizeof(buffer),
 			"Load Avg: %.2f %.2f %.2f, ",
 			min1, min5, min15);
@@ -2020,7 +2038,7 @@ redo:
 		case EXIT_SUCCESS:
 			break;
 		case EXIT_NO_RESOURCE:
-			pr_err_skip("process [%d] (%s) aborted early, out of system resources\n",
+			pr_warn_skip("process [%d] (%s) aborted early, out of system resources\n",
 				ret, stressor_name);
 			*resource_success = false;
 			do_abort = true;
@@ -2246,7 +2264,7 @@ void stress_metrics_set_const_check(
 	const bool const_description,
 	const double value)
 {
-	stress_metrics_t *metrics;
+	stress_metrics_data_t *metrics;
 
 	if (idx >= STRESS_MISC_METRICS_MAX)
 		return;
@@ -2333,8 +2351,8 @@ static void MLOCKED_TEXT stress_run(
 			if (g_opt_timeout && (stress_time_now() - time_start > (double)g_opt_timeout))
 				goto abort;
 
-			stats->counter_ready = true;
-			stats->counter = 0;
+			stats->ci.counter_ready = true;
+			stats->ci.counter = 0;
 			stats->checksum = *checksum;
 			for (i = 0; i < SIZEOF_ARRAY(stats->metrics); i++) {
 				stats->metrics[i].value = -1.0;
@@ -2400,8 +2418,7 @@ again:
 #endif
 				if (keep_stressing_flag() && !(g_opt_flags & OPT_FLAGS_DRY_RUN)) {
 					const stress_args_t args = {
-						.counter = &stats->counter,
-						.counter_ready = &stats->counter_ready,
+						.ci = &stats->ci,
 						.name = name,
 						.max_ops = g_stressor_current->bogo_ops,
 						.instance = (uint32_t)j,
@@ -2418,8 +2435,8 @@ again:
 					pr_fail_check(&rc);
 
 					ok = (rc == EXIT_SUCCESS);
-					stats->run_ok = ok;
-					(*checksum)->data.run_ok = ok;
+					stats->ci.run_ok = ok;
+					(*checksum)->data.ci.run_ok = ok;
 					/* Ensure reserved padding is zero to not confuse checksum */
 					(void)memset((*checksum)->data.reserved, 0, sizeof((*checksum)->data.reserved));
 
@@ -2434,14 +2451,14 @@ again:
 					 *  if not then flag up that the counter may
 					 *  be untrustyworthy
 					 */
-					if (!stats->counter_ready) {
+					if (!stats->ci.counter_ready) {
 						pr_warn("%s: WARNING: bogo-ops counter in non-ready state, "
 							"metrics are untrustworthy (process may have been "
 							"terminated prematurely)\n",
 							name);
 						rc = EXIT_METRICS_UNTRUSTWORTHY;
 					}
-					(*checksum)->data.counter = *args.counter;
+					(*checksum)->data.ci.counter = args.ci->counter;
 					stress_hash_checksum(*checksum);
 				}
 #if defined(STRESS_PERF_STATS) &&	\
@@ -2478,9 +2495,9 @@ again:
 				 * Apparently succeeded but terminated early?
 				 * Could be a bug, so report a warning
 				 */
-				if (stats->run_ok && !g_caught_signal &&
+				if (stats->ci.run_ok && !g_caught_signal &&
 				    (run_duration < (double)g_opt_timeout) &&
-				    (!(g_stressor_current->bogo_ops && stats->counter >= g_stressor_current->bogo_ops))) {
+				    (!(g_stressor_current->bogo_ops && stats->ci.counter >= g_stressor_current->bogo_ops))) {
 
 					pr_warn("%s: WARNING: finished prematurely after just %.2fs%s\n",
 						name, run_duration, stress_duration_to_str(run_duration));
@@ -2603,7 +2620,7 @@ static void stress_metrics_check(bool *success)
 			stress_checksum_t stats_checksum;
 			const double duration = stats->finish - stats->start;
 
-			counter_check |= stats->counter;
+			counter_check |= stats->ci.counter;
 			if (duration < min_run_time)
 				min_run_time = duration;
 
@@ -2615,20 +2632,20 @@ static void stress_metrics_check(bool *success)
 			}
 
 			(void)memset(&stats_checksum, 0, sizeof(stats_checksum));
-			stats_checksum.data.counter = stats->counter;
-			stats_checksum.data.run_ok = stats->run_ok;
+			stats_checksum.data.ci.counter = stats->ci.counter;
+			stats_checksum.data.ci.run_ok = stats->ci.run_ok;
 			stress_hash_checksum(&stats_checksum);
 
-			if (stats->counter != checksum->data.counter) {
+			if (stats->ci.counter != checksum->data.ci.counter) {
 				pr_fail("%s instance %d corrupted bogo-ops counter, %" PRIu64 " vs %" PRIu64 "\n",
 					ss->stressor->name, j,
-					stats->counter, checksum->data.counter);
+					stats->ci.counter, checksum->data.ci.counter);
 				ok = false;
 			}
-			if (stats->run_ok != checksum->data.run_ok) {
+			if (stats->ci.run_ok != checksum->data.ci.run_ok) {
 				pr_fail("%s instance %d corrupted run flag, %d vs %d\n",
 					ss->stressor->name, j,
-					stats->run_ok, checksum->data.run_ok);
+					stats->ci.run_ok, checksum->data.ci.run_ok);
 				ok = false;
 			}
 			if (stats_checksum.hash != checksum->hash) {
@@ -2692,20 +2709,20 @@ static void stress_metrics_dump(
 
 	pr_lock();
 	if (g_opt_flags & OPT_FLAGS_METRICS_BRIEF) {
-		pr_inf("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s\n",
-			"stressor", "bogo ops", "real time", "usr time",
-			"sys time", "bogo ops/s", "bogo ops/s");
-		pr_inf("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s\n",
-			"", "", "(secs) ", "(secs) ", "(secs) ", "(real time)",
-			"(usr+sys time)");
+		pr_metrics("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s\n",
+			   "stressor", "bogo ops", "real time", "usr time",
+			   "sys time", "bogo ops/s", "bogo ops/s");
+		pr_metrics("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s\n",
+			   "", "", "(secs) ", "(secs) ", "(secs) ", "(real time)",
+			   "(usr+sys time)");
 	} else {
-		pr_inf("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s %12.12s %13.13s\n",
-			"stressor", "bogo ops", "real time", "usr time",
-			"sys time", "bogo ops/s", "bogo ops/s", "CPU used per",
-			"RSS Max");
-		pr_inf("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s %12.12s %13.13s\n",
-			"", "", "(secs) ", "(secs) ", "(secs) ", "(real time)",
-			"(usr+sys time)","instance (%)", "(KB)");
+		pr_metrics("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s %12.12s %13.13s\n",
+			   "stressor", "bogo ops", "real time", "usr time",
+			   "sys time", "bogo ops/s", "bogo ops/s", "CPU used per",
+			   "RSS Max");
+		pr_metrics("%-13s %9.9s %9.9s %9.9s %9.9s %12s %14s %12.12s %13.13s\n",
+			   "", "", "(secs) ", "(secs) ", "(secs) ", "(real time)",
+			   "(usr+sys time)","instance (%)", "(KB)");
 	}
 	pr_yaml(yaml, "metrics:\n");
 
@@ -2725,8 +2742,8 @@ static void stress_metrics_dump(
 		for (j = 0; j < ss->started_instances; j++) {
 			const stress_stats_t *const stats = ss->stats[j];
 
-			run_ok  |= stats->run_ok;
-			c_total += stats->counter;
+			run_ok  |= stats->ci.run_ok;
+			c_total += stats->ci.counter;
 #if defined(HAVE_GETRUSAGE)
 			u_total += stats->rusage_utime;
 			s_total += stats->rusage_stime;
@@ -2772,7 +2789,7 @@ static void stress_metrics_dump(
 
 		if (g_opt_flags & OPT_FLAGS_METRICS_BRIEF) {
 			if (g_opt_flags & OPT_FLAGS_SN) {
-				pr_inf("%-13s %9" PRIu64 " %9.3e %9.3e %9.3e %12.5e %14.5e\n",
+				pr_metrics("%-13s %9" PRIu64 " %9.3e %9.3e %9.3e %12.5e %14.5e\n",
 					munged,		/* stress test name */
 					c_total,	/* op count */
 					r_total,	/* average real (wall) clock time */
@@ -2781,7 +2798,7 @@ static void stress_metrics_dump(
 					bogo_rate_r_time, /* bogo ops on wall clock time */
 					bogo_rate);	/* bogo ops per second */
 			} else {
-				pr_inf("%-13s %9" PRIu64 " %9.2f %9.2f %9.2f %12.2f %14.2f\n",
+				pr_metrics("%-13s %9" PRIu64 " %9.2f %9.2f %9.2f %12.2f %14.2f\n",
 					munged,		/* stress test name */
 					c_total,	/* op count */
 					r_total,	/* average real (wall) clock time */
@@ -2793,7 +2810,7 @@ static void stress_metrics_dump(
 		} else {
 			/* extended metrics */
 			if (g_opt_flags & OPT_FLAGS_SN) {
-				pr_inf("%-13s %9" PRIu64 " %9.3e %9.3e %9.3e %12.5e %14.5e %15.4e %13ld\n",
+				pr_metrics("%-13s %9" PRIu64 " %9.3e %9.3e %9.3e %12.5e %14.5e %15.4e %13ld\n",
 					munged,		/* stress test name */
 					c_total,	/* op count */
 					r_total,	/* average real (wall) clock time */
@@ -2804,7 +2821,7 @@ static void stress_metrics_dump(
 					cpu_usage,	/* % cpu usage */
 					maxrss);	/* maximum RSS in KB */
 			} else {
-				pr_inf("%-13s %9" PRIu64 " %9.2f %9.2f %9.2f %12.2f %14.2f %12.2f %13ld\n",
+				pr_metrics("%-13s %9" PRIu64 " %9.2f %9.2f %9.2f %12.2f %14.2f %12.2f %13ld\n",
 					munged,		/* stress test name */
 					c_total,	/* op count */
 					r_total,	/* average real (wall) clock time */
@@ -2864,7 +2881,7 @@ static void stress_metrics_dump(
 	}
 
 	if (misc_metrics) {
-		pr_inf("miscellaneous metrics:\n");
+		pr_metrics("miscellaneous metrics:\n");
 		for (ss = stressors_head; ss; ss = ss->next) {
 			size_t i;
 			int32_t j;
@@ -2879,33 +2896,33 @@ static void stress_metrics_dump(
 				if (description) {
 					int64_t exponent = 0;
 					double geomean, mantissa = 1.0;
-					double inverse_n;
 					double n = 0.0;
 
 					for (j = 0; j < ss->started_instances; j++) {
 						int e;
 						const stress_stats_t *const stats = ss->stats[j];
-						double f;
 
 						if (stats->metrics[i].value > 0.0) {
-							f = frexp(stats->metrics[i].value, &e);
+							const double f = frexp(stats->metrics[i].value, &e);
+
 							mantissa *= f;
 							exponent += e;
 							n += 1.0;
 						}
 					}
 					if (n > 0.0) {
-						inverse_n = 1.0 / (double)ss->started_instances;
+						const double inverse_n = 1.0 / (double)n;
+
 						geomean = pow(mantissa, inverse_n) * pow(2.0, (double)exponent * inverse_n);
 					} else {
 						geomean = 0.0;
 					}
 					if (g_opt_flags & OPT_FLAGS_SN) {
-						pr_inf("%-13s %13.2e %s (geometic mean of %" PRIu32 " instances)\n",
-							munged, geomean, description, ss->started_instances);
+						pr_metrics("%-13s %13.2e %s (geometic mean of %" PRIu32 " instances)\n",
+							   munged, geomean, description, ss->started_instances);
 					} else {
-						pr_inf("%-13s %13.2f %s (geometic mean of %" PRIu32 " instances)\n",
-							munged, geomean, description, ss->started_instances);
+						pr_metrics("%-13s %13.2f %s (geometic mean of %" PRIu32 " instances)\n",
+							   munged, geomean, description, ss->started_instances);
 					}
 				}
 			}
@@ -3514,7 +3531,6 @@ int stress_parse_opts(int argc, char **argv, const bool jobmode)
 		size_t i;
 
 		opterr = (!jobmode) ? opterr : 0;
-
 next_opt:
 		if ((c = getopt_long(argc, argv, "?khMVvqnt:b:c:i:j:m:d:f:s:l:p:P:C:S:a:y:F:D:T:u:o:r:B:R:Y:x:",
 			long_options, &option_index)) == -1) {
@@ -3638,6 +3654,24 @@ next_opt:
 			break;
 		case OPT_no_madvise:
 			g_opt_flags &= ~OPT_FLAGS_MMAP_MADVISE;
+			break;
+		case OPT_oom_avoid_bytes:
+			{
+				size_t shmall, freemem, totalmem, freeswap, totalswap, bytes;
+
+				bytes = (size_t)stress_get_uint64_byte_memory(optarg, 1);
+				stress_get_memlimits(&shmall, &freemem, &totalmem, &freeswap, &totalswap);
+				if ((freemem > 0) && (bytes > freemem / 2)) {
+					char buf[32];
+
+					bytes = freemem / 2;
+					pr_inf("option --oom-avoid-bytes too large, limiting to "
+						"50%% (%s) of free memory\n",
+						stress_uint64_to_str(buf, sizeof(buf), (uint64_t)bytes));
+				}
+				stress_set_setting("oom-avoid-bytes", TYPE_ID_SIZE_T, &bytes);
+				g_opt_flags |= OPT_FLAGS_OOM_AVOID;
+			}
 			break;
 		case OPT_query:
 			if (!jobmode) {

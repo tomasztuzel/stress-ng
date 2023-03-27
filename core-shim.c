@@ -20,8 +20,10 @@
 #define STRESS_CORE_SHIM
 
 #include "stress-ng.h"
-#include "core-pragma.h"
 #include "core-arch.h"
+#include "core-asm-riscv.h"
+#include "core-cpu-cache.h"
+#include "core-pragma.h"
 
 #if defined(__NR_pkey_get)
 #define HAVE_PKEY_GET
@@ -66,6 +68,10 @@ UNEXPECTED
 #include <sys/prctl.h>
 #endif
 
+#if defined(HAVE_SYS_TIMEX_H)
+#include <sys/timex.h>
+#endif
+
 #if defined(HAVE_SYS_RANDOM_H)
 #include <sys/random.h>
 #endif
@@ -88,6 +94,44 @@ UNEXPECTED
 #else
 #define shim_rusage_who_t	int
 #endif
+
+#ifdef HAVE_LINUX_MODULE_H
+#include <linux/module.h>
+#endif
+
+/*
+ *  shim_finit_module()
+ *      shim for linux finit_module
+ */
+int shim_finit_module(int fd, const char *uargs, int flags)
+{
+#if defined(HAVE_FINIT_MODULE)
+	extern finit_module(int fd, const char *param_values, int flags);
+
+	return finit_module(fd, uargs, flags);
+#elif defined(__NR_finit_module)
+	return syscall(__NR_finit_module, fd, uargs, flags);
+#else
+	return shim_enosys(0, fd, uargs, flags);
+#endif
+}
+
+/*
+ *  shim_delete_module()
+ *      shim for linux delete_module
+ */
+int shim_delete_module(const char *name, unsigned int flags)
+{
+#if defined(HAVE_DELETE_MODULE)
+	extern int delete_module(const char *name, int flags);
+
+	return delete_module(name, flags);
+#elif defined(__NR_delete_module)
+	return syscall(__NR_delete_module, name, flags);
+#else
+	return shim_enosys(0, name, flags);
+#endif
+}
 
 #if defined(__sun__)
 #if defined(HAVE_GETDOMAINNAME)
@@ -149,6 +193,28 @@ int shim_cacheflush(char *addr, int nbytes, int cache)
 	extern int cacheflush(void *addr, int nbytes, int cache);
 
 	return cacheflush((void *)addr, nbytes, cache);
+#elif defined(STRESS_ARCH_RISCV)
+#if defined(__NR_riscv_flush_icache)
+	if (cache == SHIM_ICACHE) {
+		if (syscall(__NR_riscv_flush_icache, (uintptr_t)addr,
+			    ((uintptr_t)addr) + nbytes, 0) == 0) {
+			return 0;
+		}
+	}
+#endif
+#if defined(HAVE_ASM_RISCV_FENCE_I)
+	if (cache == SHIM_ICACHE)  {
+		stress_asm_riscv_fence_i();
+		return 0;
+	}
+#endif
+#if defined(HAVE_ASM_RISCV_FENCE)
+	if (cache == SHIM_ICACHE)  {
+		stress_asm_riscv_fence();
+		return 0;
+	}
+#endif
+	return -1;
 #elif defined(HAVE_BUILTIN___CLEAR_CACHE)
 	/* More portable builtin */
 	(void)cache;

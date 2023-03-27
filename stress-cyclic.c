@@ -21,7 +21,7 @@
 #include "core-capabilities.h"
 
 #define DEFAULT_DELAY_NS	(100000)
-#define MAX_SAMPLES		(10000000)
+#define MAX_SAMPLES		(100000000)
 #define DEFAULT_SAMPLES		(10000)
 #define MAX_BUCKETS		(250)
 
@@ -38,6 +38,7 @@ typedef struct {
 	size_t		latencies_size;	/* size of latencies allocation */
 	size_t		cyclic_samples;	/* number of latency samples */
 	size_t		index;		/* index into latencies */
+	size_t		index_reqd;	/* theoretic size of index required for the run */
 	int32_t		min_prio;	/* min priority allowed */
 	int32_t		max_prio;	/* max priority allowed */
 	double		ns;		/* total nanosecond latency */
@@ -152,6 +153,7 @@ static void stress_cyclic_stats(
 
 	if (rt_stats->index < rt_stats->cyclic_samples)
 		rt_stats->latencies[rt_stats->index++] = delta_ns;
+	rt_stats->index_reqd++;
 
 	rt_stats->ns += (double)delta_ns;
 }
@@ -252,6 +254,7 @@ static int stress_cyclic_poll(
 
 			if (rt_stats->index < rt_stats->cyclic_samples)
 				rt_stats->latencies[rt_stats->index++] = delta_ns;
+			rt_stats->index_reqd++;
 
 			rt_stats->ns += (double)delta_ns;
 			break;
@@ -351,6 +354,7 @@ static int stress_cyclic_itimer(
 
 	if (rt_stats->index < rt_stats->cyclic_samples)
 		rt_stats->latencies[rt_stats->index++] = delta_ns;
+	rt_stats->index_reqd++;
 
 	rt_stats->ns += (double)delta_ns;
 
@@ -632,7 +636,7 @@ static int stress_cyclic(const stress_args_t *args)
 	uint64_t cyclic_dist = 0;
 	int32_t cyclic_prio = INT32_MAX;
 	size_t cyclic_samples = DEFAULT_SAMPLES;
-	int policy;
+	int policy, rc = EXIT_SUCCESS;
 	size_t cyclic_policy = 0;
 	const double start = stress_time_now();
 	stress_rt_stats_t *rt_stats;
@@ -738,7 +742,7 @@ again:
 		uint32_t count;
 #endif
 		int ret;
-		NOCLOBBER int rc = EXIT_FAILURE;
+		NOCLOBBER int ncrc = EXIT_FAILURE;
 
 #if defined(HAVE_ATOMIC)
 		__sync_fetch_and_add(&g_shared->softlockup_count, 1);
@@ -770,12 +774,12 @@ again:
 		(void)setrlimit(RLIMIT_RTTIME, &rlim);
 #endif
 
-		if (stress_sighandler(args->name, SIGXCPU, stress_rlimit_handler, &old_action_xcpu) < 0)
-			goto tidy;
-
 		ret = sigsetjmp(jmp_env, 1);
 		if (ret)
 			goto tidy_ok;
+
+		if (stress_sighandler(args->name, SIGXCPU, stress_rlimit_handler, &old_action_xcpu) < 0)
+			goto tidy;
 
 #if defined(HAVE_SCHED_GET_PRIORITY_MIN) &&	\
     defined(HAVE_SCHED_GET_PRIORITY_MAX)
@@ -795,6 +799,12 @@ redo_policy:
 			if ((errno == E2BIG) &&
 			    (policies[cyclic_policy].policy == SCHED_DEADLINE)) {
 				cyclic_policy = 1;
+				if (cyclic_policy > SIZEOF_ARRAY(policies)) {
+					pr_inf("%s: DEADLINE not supported by kernel, no other policies "
+						"available. skipping stressor\n", args->name);
+					ncrc = EXIT_NO_RESOURCE;
+					goto finish;
+				}
 				policy = policies[cyclic_policy].policy;
 #if defined(HAVE_SCHED_GET_PRIORITY_MAX)
 				rt_stats->max_prio = sched_get_priority_max(policy);
@@ -830,10 +840,10 @@ redo_policy:
 		} while (keep_stressing(args));
 
 tidy_ok:
-		rc = EXIT_SUCCESS;
+		ncrc = EXIT_SUCCESS;
 tidy:
 		(void)fflush(stdout);
-		_exit(rc);
+		_exit(ncrc);
 	} else {
 		int status;
 
@@ -890,6 +900,10 @@ tidy:
 					rt_stats->latencies[j]);
 			}
 			stress_rt_dist(args->name, rt_stats, (int64_t)cyclic_dist);
+
+			if (rt_stats->index < rt_stats->index_reqd)
+				pr_inf("%s: Note: --cyclic-samples needed to be %zd to capture all the data for this run\n",
+					args->name, rt_stats->index_reqd);
 			pr_unlock();
 		} else {
 			pr_inf("%s: %10s: no latency information available\n",
@@ -904,7 +918,7 @@ finish:
 	(void)munmap((void *)rt_stats->latencies, rt_stats->latencies_size);
 	(void)munmap((void *)rt_stats, size);
 
-	return EXIT_SUCCESS;
+	return rc;
 }
 
 static const stress_opt_set_func_t opt_set_funcs[] = {

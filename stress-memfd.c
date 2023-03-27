@@ -87,6 +87,12 @@ static const unsigned int flags[] = {
     defined(MFD_HUGE_1GB)
 	MFD_HUGETLB | MFD_HUGE_1GB,
 #endif
+#if defined(MFD_NOEXEC_SEAL)
+	MFD_NOEXEC_SEAL,
+#endif
+#if defined(MFD_EXEC)
+	MFD_EXEC,
+#endif
 };
 
 /*
@@ -404,10 +410,7 @@ buf_unmap:
 		}
 #endif
 
-		for (i = 0; i < memfd_fds; i++) {
-			if (fds[i] >= 0)
-				(void)close(fds[i]);
-		}
+		stress_close_fds(fds, memfd_fds);
 
 		/* Exercise illegal memfd name */
 		stress_rndstr(filename, sizeof(filename));

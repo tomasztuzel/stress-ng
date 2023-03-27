@@ -16,9 +16,13 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
-#ifndef CORE_CACHE_H
-#define CORE_CACHE_H
+#ifndef CORE_CPU_CACHE_H
+#define CORE_CPU_CACHE_H
 
+#include "core-asm-ppc64.h"
+#include "core-asm-riscv.h"
+#include "core-asm-sparc.h"
+#include "core-asm-x86.h"
 #include "core-arch.h"
 #include "core-cpu.h"
 
@@ -28,14 +32,14 @@ typedef enum stress_cache_type {
 	CACHE_TYPE_DATA,		/* D$ */
 	CACHE_TYPE_INSTRUCTION,		/* I$ */
 	CACHE_TYPE_UNIFIED,		/* D$ + I$ */
-} stress_cache_type_t;
+} stress_cpu_cache_type_t;
 
 /* CPU cache information */
 typedef struct stress_cpu_cache {
 	uint64_t           size;      	/* cache size in bytes */
 	uint32_t           line_size;	/* cache line size in bytes */
 	uint32_t           ways;	/* cache ways */
-	stress_cache_type_t type;	/* cache type */
+	stress_cpu_cache_type_t type;	/* cache type */
 	uint16_t           level;	/* cache level, L1, L2 etc */
 	uint8_t		   padding[2];	/* padding */
 } stress_cpu_cache_t;
@@ -46,20 +50,24 @@ typedef struct stress_cpu {
 	uint32_t	cache_count;	/* CPU cache #  */
 	bool		online;		/* CPU online when true */
 	uint8_t		padding[7];	/* padding */
-} stress_cpu_t;
+} stress_cpu_cache_cpu_t;
 
 typedef struct stress_cpus {
-	stress_cpu_t *cpus;		/* CPU data */
+	stress_cpu_cache_cpu_t *cpus;	/* CPU data */
 	uint32_t	count;		/* CPU count */
 	uint8_t		padding[4];	/* padding */
-} stress_cpus_t;
+} stress_cpu_cache_cpus_t;
 
 /* CPU cache helpers */
-extern stress_cpus_t *stress_get_all_cpu_cache_details(void);
-extern uint16_t stress_get_max_cache_level(const stress_cpus_t *cpus);
-extern stress_cpu_cache_t *stress_get_cpu_cache(const stress_cpus_t *cpus,
+extern stress_cpu_cache_cpus_t *stress_cpu_cache_get_all_details(void);
+extern uint16_t stress_cpu_cache_get_max_level(const stress_cpu_cache_cpus_t *cpus);
+extern stress_cpu_cache_t *stress_cpu_cache_get(const stress_cpu_cache_cpus_t *cpus,
 	const uint16_t cache_level);
-extern void stress_free_cpu_caches(stress_cpus_t *cpus);
+extern void stress_free_cpu_caches(stress_cpu_cache_cpus_t *cpus);
+extern void stress_cpu_cache_get_llc_size(size_t *llc_size, size_t *cache_line_size);
+extern void stress_cpu_cache_get_level_size(const uint16_t cache_level,
+	size_t *llc_size, size_t *cache_line_size);
+
 
 /*
  *  cacheflush(2) cache options
@@ -86,7 +94,7 @@ static shim_clflush_func_t shim_clflush_func =  shim_clflush_select;
 
 static inline void ALWAYS_INLINE shim_clflush_op(volatile void *ptr)
 {
-	__asm__ __volatile__("clflush (%0)\n" : : "r"(ptr) : "memory");
+	stress_asm_x86_clflush(ptr);
 }
 
 static inline void ALWAYS_INLINE shim_clflush_nop(volatile void *ptr)
@@ -139,29 +147,27 @@ static inline void ALWAYS_INLINE shim_mfence(void)
 #if defined(STRESS_ARCH_RISCV) &&	\
     defined(HAVE_ASM_RISCV_FENCE) &&	\
     !defined(HAVE_SHIM_MFENCE)
-	 __asm__ __volatile__("fence" ::: "memory");
+	stress_asm_riscv_fence();
 #endif
 
 #if defined(STRESS_ARCH_X86) &&		\
     defined(HAVE_ASM_X86_MFENCE) &&	\
     !defined(HAVE_SHIM_MFENCE)
-	__asm__ __volatile__("mfence" : : : "memory");
+	stress_asm_x86_mfence();
 #define HAVE_SHIM_MFENCE
 #endif
 
-/* Disabled for now */
-#if 0
 #if defined(STRESS_ARCH_PPC64) &&	\
+    defined(STRESS_ASM_PPC64_MSYNC) &&	\
     !defined(HAVE_SHIM_MFENCE)
-	__asm__ __volatile__ ("msync" : : : "memory");
 #define HAVE_SHIM_MFENCE
-#endif
+	stress_asm_ppc64_msync();
 #endif
 
 #if defined(STRESS_ARCH_SPARC) &&	\
     defined(HAVE_ASM_SPARC_MEMBAR) &&	\
     !defined(HAVE_SHIM_MFENCE)
-	 __asm__ __volatile__ ("membar #StoreLoad" : : : "memory");
+	stress_asm_sparc_membar();
 #define HAVE_SHIM_MFENCE
 #endif
 

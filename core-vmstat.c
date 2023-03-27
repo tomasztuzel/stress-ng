@@ -694,11 +694,10 @@ static void stress_read_vmstat(stress_vmstat_t *vmstat)
 	struct xsw_usage xsu;
 	mach_port_t host = mach_host_self();
 	natural_t count = HOST_VM_INFO64_COUNT;
-	natural_t pcount, pi_array_count;
-	processor_info_array_t pi_array;
 	size_t page_size = stress_get_page_size();
 	int ret;
 
+	(void)memset(&vm_stat, 0, sizeof(vmstat));
 	ret = host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stat, &count);
 	if (ret >= 0) {
 		vmstat->swap_in = vm_stat.pageins;
@@ -721,17 +720,21 @@ static void stress_read_vmstat(stress_vmstat_t *vmstat)
     defined(CPU_STATE_USER) &&		\
     defined(CPU_STATE_SYSTEM) &&	\
     defined(CPU_STATE_IDLE)
-	ret = host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &pcount, &pi_array, &pi_array_count);
-	if (ret >= 0) {
-		natural_t i;
+	{
+		natural_t pcount, pi_array_count;
+		processor_info_array_t pi_array;
 
+		ret = host_processor_info(host, PROCESSOR_CPU_LOAD_INFO, &pcount, &pi_array, &pi_array_count);
+		if (ret >= 0) {
+			natural_t i;
 
-		for (i = 0; i < pi_array_count; i++) {
-			integer_t *cpu_ticks = &pi_array[i * CPU_STATE_MAX];
+			for (i = 0; i < pi_array_count; i++) {
+				integer_t *cpu_ticks = &pi_array[i * CPU_STATE_MAX];
 
-			vmstat->user_time += cpu_ticks[CPU_STATE_USER];
-			vmstat->system_time += cpu_ticks[CPU_STATE_SYSTEM];
-			vmstat->idle_time += cpu_ticks[CPU_STATE_IDLE];
+				vmstat->user_time += cpu_ticks[CPU_STATE_USER];
+				vmstat->system_time += cpu_ticks[CPU_STATE_SYSTEM];
+				vmstat->idle_time += cpu_ticks[CPU_STATE_IDLE];
+			}
 		}
 	}
 #endif
@@ -1010,6 +1013,8 @@ void stress_vmstat_start(void)
 	vmstat_pid = fork();
 	if ((vmstat_pid < 0) || (vmstat_pid > 0))
 		return;
+
+	stress_set_proc_name("stat [periodic]");
 
 	if (vmstat_delay)
 		stress_get_vmstat(&vmstat);

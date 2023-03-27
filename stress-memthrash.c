@@ -20,7 +20,7 @@
 #include "stress-ng.h"
 #include "core-arch.h"
 #include "core-asm-x86.h"
-#include "core-cache.h"
+#include "core-cpu-cache.h"
 #include "core-nt-store.h"
 #include "core-pthread.h"
 #include "core-target-clones.h"
@@ -182,7 +182,8 @@ static void stress_memthrash_memset(
 #endif
 }
 
-#if defined(HAVE_ASM_X86_REP_STOSD)
+#if defined(HAVE_ASM_X86_REP_STOSD) &&	\
+    !defined(__ILP32__)
 static inline void OPTIMIZE3 stress_memtrash_memsetstosd(
 	const stress_memthrash_context_t *context,
 	const size_t mem_size)
@@ -672,7 +673,8 @@ static const stress_memthrash_method_info_t memthrash_methods[] = {
 	{ "memmove",	stress_memthrash_memmove },
 	{ "memset",	stress_memthrash_memset },
 	{ "memset64",	stress_memthrash_memset64 },
-#if defined(HAVE_ASM_X86_REP_STOSD)
+#if defined(HAVE_ASM_X86_REP_STOSD) &&	\
+    !defined(__ILP32__)
 	{ "memsetstosd",stress_memtrash_memsetstosd },
 #endif
 	{ "mfence",	stress_memthrash_mfence },
@@ -754,7 +756,7 @@ static void stress_memthrash_find_primes(void)
 
 		stress_memthrash_primes[i].mem_size = mem_size;
 		stress_memthrash_primes[i].prime_stride =
-			(size_t)stress_get_prime64((uint64_t)cache_lines) * STRESS_CACHE_LINE_SIZE;
+			(size_t)stress_get_next_prime64((uint64_t)cache_lines) * STRESS_CACHE_LINE_SIZE;
 	}
 }
 

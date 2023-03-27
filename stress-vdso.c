@@ -456,7 +456,6 @@ static int vdso_sym_list_check_vdso_func(stress_vdso_sym_t **list)
  */
 static int stress_vdso(const stress_args_t *args)
 {
-	char *str;
 	double t1, t2, t3, dt, overhead_ns;
 	uint64_t counter;
 
@@ -473,6 +472,8 @@ static int stress_vdso(const stress_args_t *args)
 	}
 
 	if (args->instance == 0) {
+		char *str;
+
 		str = vdso_sym_list_str();
 		if (str) {
 			pr_inf("%s: exercising vDSO functions: %s\n",
@@ -480,6 +481,8 @@ static int stress_vdso(const stress_args_t *args)
 			free(str);
 		}
 	}
+
+	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	t1 = stress_time_now();
 	do {
@@ -493,8 +496,6 @@ static int stress_vdso(const stress_args_t *args)
 	t2 = stress_time_now();
 
 	counter = get_counter(args);
-
-	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	do {
 		int j;
@@ -517,9 +518,8 @@ static int stress_vdso(const stress_args_t *args)
 	if (dt > 0.0) {
 		const double ns = ((dt * (double)STRESS_NANOSECOND) / (double)counter) - overhead_ns;
 
-		pr_inf("%s: %.2f nanosecs per call (excluding %.2f nanosecs test overhead)\n",
-			args->name, ns, overhead_ns);
-		stress_metrics_set(args, 0, "nanosecs per call", ns);
+		stress_metrics_set(args, 0, "nanosecs per call (excluding test overhead)", ns);
+		stress_metrics_set(args, 1, "nanosecs for test overhead", overhead_ns);
 	}
 
 	stress_set_proc_state(args->name, STRESS_STATE_DEINIT);

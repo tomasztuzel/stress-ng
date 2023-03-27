@@ -2,7 +2,7 @@
 .\" First parameter, NAME, should be all caps
 .\" Second parameter, SECTION, should be 1-8, maybe w/ subsection
 .\" other parameters are allowed: see man(7), man(1)
-.TH STRESS-NG 1 "19 Jan 2023"
+.TH STRESS-NG 1 "23 March 2023"
 .\" Please adjust this date whenever revising the manpage.
 .\"
 .\" Some roff macros, for reference:
@@ -257,10 +257,14 @@ specify a range of NUMA nodes using '-', for example: \-\-mbind 0,2-3,6,7-11
 .TP
 .B \-\-metrics
 output number of bogo operations in total performed by the stress processes.
-Note that these are not a reliable metric of performance or throughput and
-have not been designed to be used for benchmarking whatsoever. The metrics are
-just a useful way to observe how a system behaves when under various kinds of
-load.
+Note that these are
+.B not a reliable metric of performance or throughput
+and
+.B
+have not been designed to be used for benchmarking whatsoever.
+Some stressors have additional metrics that are more useful than bogo-ops, and
+these are generally more useful for observing how a system behaves when under
+various kinds of load.
 .RS
 .PP
 The following columns of information are output:
@@ -274,6 +278,8 @@ bogo ops
 T}	T{
 number of iterations of the stressor during the run. This is metric of
 how much overall "work" has been achieved in bogo operations.
+.B
+Do not use this as a reliable measure of throughput for benchmarking.
 T}
 T{
 real time (secs)
@@ -351,6 +357,14 @@ Attempt to avoid out-of-memory conditions that can lead to the Out-of-Memory
 (OOM) killer terminating stressors. This checks for low memory scenarios and
 swapping before making memory allocations and hence adds some overhead to the
 stressors and will slow down stressor allocation speeds.
+.TP
+.B \-\-oom\-avoid\-bytes N
+Specify a low memory threshold to avoid making any further memory allocations.
+The parameter can be specified as an absolute number of bytes (e.g. 2M for 2MB)
+or a percentage of the current free memory, e.g. 5% (the default is 2.5%).
+This option implicitly enables \-\-oom\-avoid.  The option allows the system
+to have enough free memory to try to avoid the out-of-memory killer terminating
+processes.
 .TP
 .B \-\-oomable
 Do not respawn a stressor if it gets killed by the Out-of-Memory (OOM) killer.
@@ -1431,7 +1445,7 @@ or rr (round\-robin).
 specify the scheduling priority P. Range from 1 (lowest) to 100 (highest).
 .TP
 .B \-\-cyclic\-samples N
-measure N samples. Range from 1 to 10000000 samples.
+measure N samples. Range from 1 to 100000000 samples.
 .TP
 .B \-\-cyclic\-sleep N
 sleep for N nanoseconds per test cycle using clock_nanosleep(2) with the
@@ -2599,6 +2613,13 @@ specify the level 1 cache size (in bytes)
 .B \-\-l1cache-ways N
 specify the number of level 1 cache ways
 .TP
+.B \-\-l1cache-ops N
+specify the number of cache read/write bogo-op loops to run
+.TP
+.B \-\-l1cache-method [ forward | random | reverse ]
+select the method of exercising a l1cache sized buffer. The default is a
+forward scan, random picks random bytes to exercise, reverse scans in reverse.
+.TP
 .B \-\-landlock N
 start N workers that exercise Linux 5.13 landlocking. A range of
 landlock_create_ruleset flags are exercised with a read only file rule
@@ -3064,10 +3085,15 @@ write rates are specified.
 .B \-\-memrate\-ops N
 stop after N bogo memrate operations.
 .TP
+.B \-\-memrate\-flush
+flush cache between each memory exercising test to remove caching benefits in
+memory rate metrics.
+.TP
 .B \-\-memrate\-bytes N
 specify the size of the memory buffer being exercised. The default size
 is 256MB. One can specify the size in units of Bytes, KBytes, MBytes and
-GBytes using the suffix b, k, m or g.
+GBytes using the suffix b, k, m or g, or cache sizes with L1, L2, L3 or
+LLC (lower level cache size).
 .TP
 .B \-\-memrate\-rd\-mbs N
 specify the maximum allowed read rate in MB/sec. The actual read rate
@@ -3384,6 +3410,39 @@ the maximum allowed mappings or a maximum of 262144 mappings are made.
 .B \-\-mmapmany\-ops N
 stop after N mmapmany bogo operations
 .TP
+.B \-\-module N
+start N workers that use finit_module() to load the module specified
+or the hello test module, if is available. There are different ways
+to test loading modules. Using modprobe calls in a loop, using the kernel
+kernel module autoloader, and this stress-ng module stressor. To stress tests
+modprobe we can simply run the userspace modprobe program in a loop. To stress
+test the kernel module autoloader we can stress tests using the upstream
+kernel tools/testing/selftests/kmod/kmod.sh. This ends up calling modprobe
+in the end, and it has its own caps built-in to self protect the kernel from
+too many requests at the same time. The userspace modprobe call will also
+prevent calls if the same module exists already. The stress-ng modules
+stressor is designed to help stress test the finit_module() system call
+even if the module is already loaded, letting us tests races which are
+otherwise hard to reproduce.
+.TP
+.B \-\-module\-name NAME
+NAME of the module to use, for example: test_module, xfs, ext4. By default
+test_module is used so CONFIG_TEST_LKM must be enabled in the kernel.
+The module dependencies must be loaded prior to running these stressor
+tests, as this stresses running finit_module() not using modprobe.
+.TP
+.B \-\-module\-no\-modver
+ignore module modversions when using finit_module().
+.TP
+.B \-\-module\-no\-vermag
+ignore module versions when using finit_module().
+.TP
+.B \-\-module\-no-unload
+do not unload the module right after loading it with finit_module().
+.TP
+.B \-\-module\-ops N
+stop after N module load/unload cycles
+.TP
 .B \-\-mprotect N
 start N workers that exercise changing page protection settings and access
 memory after each change. 8 processes per worker contend with each other
@@ -3430,6 +3489,10 @@ paged out.  This is a no-op if mlock(2) is not available.
 .B \-\-msg N
 start N sender and receiver processes that continually send and receive
 messages using System V message IPC.
+.TP
+.B \-\-msg\-bytes N
+specify the size of the message being sent and received. Range 4 to 8192 bytes,
+default is 4 bytes.
 .TP
 .B \-\-msg\-ops N
 stop after N bogo message send operations completed.
@@ -3853,6 +3916,47 @@ stop prefetch stressors after N benchmark operations
 .B \-\-prefetch-l3-size N
 specify the size of the l3 cache
 .TP
+.B \-\-prefetch\-method N
+select the prefetching method. Available methods are:
+.TS
+expand;
+lB2 lB lB lB
+l l s s.
+Method	Description
+builtin	T{
+Use the __builtin_prefetch(3) function for prefetching. This is the default.
+T}
+builtinl0	T{
+Use the __builtin_prefetch(3) function for prefetching, with a locality 0 hint.
+T}
+builtinl3	T{
+Use the __builtin_prefetch(3) function for prefetching, with a locality 3 hint.
+T}
+dcbt	T{
+Use the ppc64 dcbt instruction to fetch data into the L1 cache (ppc64 only).
+T}
+dcbtst	T{
+Use the ppc64 dcbtst instruction to fetch data into the L1 cache (ppc64 only).
+T}
+prefetcht0	T{
+Use the x86 prefetcht0 instruction to prefetch data into all levels of the
+cache hierarchy (x86 only).
+T}
+prefetcht1	T{
+Use the x86 prefetcht1 instruction (temporal data with respect to first level
+cache) to prefetch data into level 2 cache and higher (x86 only).
+T}
+prefetcht2	T{
+Use the x86 prefetcht2 instruction (temporal data with respect to second level
+cache) to prefetch data into level 2 cache and higher (x86 only).
+T}
+prefetchnta	T{
+Use the x86 prefetchnta instruction (non-temporal data with respect to all
+cache levels) into a location close to the processor, minimizing cache
+pollution (x86 only).
+T}
+.TE
+.TP
 .B \-\-priv\-instr N
 start N workers that exercise various architecture specific privileged
 instructions that cannot be executed by userspace programs. These
@@ -3911,6 +4015,10 @@ stop qsort stress workers after N bogo qsorts.
 .TP
 .B \-\-qsort\-size N
 specify number of 32 bit integers to sort, default is 262144 (256 \(mu 1024).
+.TP
+.B \-\-qsort\-method [ qsort-libc | qsort-bm ]
+select either the libc implementation of qsort or the J. L. Bentley and M. D. McIlroy
+implementation of qsort. The default is the libc implementation.
 .TP
 .B \-\-quota N
 start N workers that exercise the Q_GETQUOTA, Q_GETFMT, Q_GETINFO, Q_GETSTATS
@@ -5230,10 +5338,14 @@ used (the 'all' option).
 .B \-\-tsc N
 start N workers that read the Time Stamp Counter (TSC) 256 times per loop
 iteration (bogo operation).  This exercises the tsc instruction for x86,
-the mftb instruction for ppc64 and the rdcycle instruction for RISC-V.
+the mftb instruction for ppc64, the rdcycle instruction for RISC-V and
+the tick instruction on SPARC.
 .TP
 .B \-\-tsc\-ops N
 stop the tsc workers after N bogo operations are completed.
+.TP
+.B \-\-tsc\-lfence
+add lfence after each tsc read to force serialization (x86 only).
 .TP
 .B \-\-tsearch N
 start N workers that insert, search and delete 32 bit integers on a binary
@@ -5301,6 +5413,15 @@ up or does not support the domain then the loopback (lo) interface is used as th
 .TP
 .B \-\-udp\-flood\-ops N
 stop udp-flood stress workers after N bogo operations.
+.TP
+.B \-\-umount N
+start N workers that exercise mounting and racying unmounting of small tmpfs and ramfs
+file systems. Three child processes are invoked, one to mount, another to force umount
+and a third to exercice /proc/mounts. Small random delays are used between mount and
+umount calls to try to trigger race conditions on the umount calls.
+.TP
+.B \-\-umount\-ops N
+stop umount workers after N successful bogo mount/umount operations.
 .TP
 .B \-\-unshare N
 start N workers that each fork off 32 child processes, each of which exercises
@@ -5847,13 +5968,13 @@ sequentially write to memory using 1 \(mu 1024 bit vector write per bogo loop
 Each loop equates to one bogo operation.  This exercises raw memory writes.
 Note that memory writes are not checked at the end of each test iteration.
 T}
-wrrd64128	T{
+wrrd128nt	T{
 write to memory in 128 bit chunks using non-temporal writes (bypassing the cache).
 Each chunk is written 4 times to hammer the memory. Then check to see if the
 data is correct using non-temporal reads if they are available or normal memory reads
 if not. Only available with processors that provide non-temporal 128 bit writes.
 T}
-zero-one	T{
+zero\-one	T{
 set all memory bits to zero and then check if any bits are not zero. Next, set
 all the memory bits to one and check if any bits are not one.
 T}
@@ -5982,6 +6103,15 @@ and waitid(2).
 .TP
 .B \-\-wait\-ops N
 stop after N bogo wait operations.
+.TP
+.B \-\-waitcpu N
+start N workers that exercise processor wait instructions. For x86 these
+are pause, tpause and umwait (when available) and nop. For ARM the yield
+instruction is used. For other architectures currently nop instructions
+are used.
+.TP
+.B \-\-waitcpu\-ops N
+stop after N bogo processor wait operations.
 .TP
 .B \-\-watchdog N
 start N workers that exercising the /dev/watchdog watchdog interface by
@@ -6381,27 +6511,14 @@ File bug reports at:
 .BR perf (1),
 .BR stress (1),
 .BR taskset (1)
+.br
+.B https://github.com/ColinIanKing/stress-ng/blob/master/README.md
 .SH AUTHOR
 stress\-ng was written by Colin Ian King <colin.i.king@gmail.com> and
 is a clean room re-implementation and extension of the original
-stress tool by Amos Waterland. Thanks also for
-contributions from Abdul Haleem, Aboorva Devarajan, Adrian Martin,
-Adrian Ratiu, Aleksandar N. Kostadinov, Alexander Kanavin,
-Alexandru Ardelean, Alfonso Sánchez-Beato, André Wild, Anton Eliasson,
-Arjan van de Ven, Baruch Siach, Bryan W. Lewis, Camille Constans,
-Carlos Santo, Christian Ehrhardt, Christopher Brown, Chunyu Hu,
-Danilo Krummrich, David Turner, Davidson Francis, Dominik B Czarnota,
-Dorinda Bassey, Eric Lin, Fabien Malfoy, Fabrice Fontaine, Florian Weimer
-Francis Laniel, Guilherme Janczak, Helmut Grohne, Iyán Méndez Veig,
-James Hunt, James Wang, Jan Luebbe, Jianshen Liu, Jim Rowan, John Kacur,
-Joseph DeVincentis, Jules Maselbas, Khalid Elmously, Khem Raj,
-Luca Pizzamiglio, Luis Henriques, Manoj Iyer, Matthew Tippett,
-Mauricio Faria de Oliveira, Maxime Chevallier, Maya Rashish,
-Mayuresh Chitale, Mike Koreneff, Paul Menzel, Piyush Goyal,
-Ralf Ramsauer, Rob Colclaser, Rosen Penev, Siddhesh Poyarekar,
-Thadeu Lima de Souza Cascardo, Thia Wyrod, Thinh Tran, Tim Gardner,
-Tim Gates, Tim Orling, Tommi Rantala, Witold Baryluk, Yong-Xuan Wang,
-Zhiyi Sun and others.
+stress tool by Amos Waterland. Thanks also to the many contributors
+to stress-ng. The README.md file in the source contains a full list
+of the contributors.
 .SH NOTES
 Sending a SIGALRM, SIGINT or SIGHUP to stress-ng causes it to
 terminate all the stressor processes and ensures temporary files and
@@ -6418,7 +6535,7 @@ The bogo operations metrics may change with each release  because of bug
 fixes to the code, new features, compiler optimisations or changes in system
 call performance.
 .SH COPYRIGHT
-Copyright \(co 2013-2021 Canonical Ltd, Copyright \(co 2021-2022 Colin Ian King.
+Copyright \(co 2013-2021 Canonical Ltd, Copyright \(co 2021-2023 Colin Ian King.
 .br
 This is free software; see the source for copying conditions.  There is NO
 warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

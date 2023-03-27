@@ -17,9 +17,9 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #
 
-VERSION=0.15.03
+VERSION=0.15.06
 #
-# Codename "hydrophonic purple squid"
+# Codename "hegemonic huffy haddock"
 #
 
 CFLAGS += -Wall -Wextra -DVERSION='"$(VERSION)"' -std=gnu99
@@ -39,6 +39,26 @@ CFLAGS += -Wcast-qual -Wfloat-equal -Wmissing-declarations \
 	-Wredundant-decls -Wshadow -Wno-missing-field-initializers \
 	-Wno-missing-braces -Wno-sign-compare -Wno-multichar \
 	-DHAVE_PEDANTIC
+endif
+
+#
+# Test for hardening flags and apply them if applicable
+#
+MACHINE = $(shell uname -m)
+ifneq ($(PRESERVE_CFLAGS),1)
+ifneq ($(MACHINE),$(filter $(MACHINE),alpha parisc ia64))
+ifeq ($(shell $(CC) $(CFLAGS) -fstack-protector-strong -E -xc /dev/null > /dev/null 2>& 1 && echo 1),1)
+CFLAGS += -fstack-protector-strong
+endif
+endif
+ifeq ($(shell $(CC) $(CFLAGS) -Werror=format-security -E -xc /dev/null > /dev/null 2>& 1 && echo 1),1)
+CFLAGS += -Werror=format-security
+endif
+ifneq ($(findstring pcc,$(CC)),pcc)
+ifeq ($(shell $(CC) $(CFLAGS) -D_FORTIFY_SOURCE=2 -E -xc /dev/null > /dev/null 2>& 1 && echo 1),1)
+CFLAGS += -D_FORTIFY_SOURCE=2
+endif
+endif
 endif
 
 #
@@ -65,10 +85,12 @@ PRE_V=
 PRE_Q=@#
 endif
 
+ifneq ($(PRESERVE_CFLAGS),1)
 ifeq ($(findstring icc,$(CC)),icc)
 CFLAGS += -no-inline-max-size -no-inline-max-total-size
 CFLAGS += -axAVX,CORE-AVX2,CORE-AVX-I,CORE-AVX512,SSE2,SSE3,SSSE3,SSE4.1,SSE4.2,SANDYBRIDGE,SKYLAKE,SKYLAKE-AVX512,TIGERLAKE,SAPPHIRERAPIDS
 CFLAGS += -ip -falign-loops -funroll-loops -ansi-alias -fma -qoverride-limits
+endif
 endif
 
 #ifeq ($(findstring clang,$(CC)),clang)
@@ -105,13 +127,17 @@ BASHDIR=/usr/share/bash-completion/completions
 #
 HEADERS = \
 	core-arch.h \
-	core-asm-x86.h \
+	core-asm-arm.h \
 	core-asm-ppc64.h \
+	core-asm-riscv.h \
+	core-asm-s390.h \
+	core-asm-sparc.h \
+	core-asm-x86.h \
 	core-bitops.h \
 	core-builtin.h \
-	core-cache.h \
 	core-capabilities.h \
 	core-cpu.h \
+	core-cpu-cache.h \
 	core-ftrace.h \
 	core-hash.h \
 	core-icache.h \
@@ -290,6 +316,7 @@ STRESS_SRC = \
 	stress-mmapfork.c \
 	stress-mmaphuge.c \
 	stress-mmapmany.c \
+	stress-module.c \
 	stress-mprotect.c \
 	stress-mq.c \
 	stress-mremap.c \
@@ -420,6 +447,7 @@ STRESS_SRC = \
 	stress-tun.c \
 	stress-udp.c \
 	stress-udp-flood.c \
+	stress-umount.c \
 	stress-unshare.c \
 	stress-uprobe.c \
 	stress-urandom.c \
@@ -439,6 +467,7 @@ STRESS_SRC = \
 	stress-vm-segv.c \
 	stress-vm-splice.c \
 	stress-wait.c \
+	stress-waitcpu.c \
 	stress-watchdog.c \
 	stress-wcs.c \
 	stress-x86cpuid.c \
@@ -454,8 +483,8 @@ STRESS_SRC = \
 #
 CORE_SRC = \
 	core-affinity.c \
-	core-cache.c \
 	core-cpu.c \
+	core-cpu-cache.c \
 	core-hash.c \
 	core-helper.c \
 	core-icache.c \
@@ -480,6 +509,7 @@ CORE_SRC = \
 	core-out-of-memory.c \
 	core-parse-opts.c \
 	core-perf.c \
+	core-processes.c \
 	core-resources.c \
 	core-sched.c \
 	core-setting.c \
@@ -544,14 +574,14 @@ apparmor-data.o: usr.bin.pulseaudio.eg config.h
 	$(PRE_V)rm -f apparmor-data.bin
 	$(PRE_V)echo "const size_t g_apparmor_data_len = sizeof(g_apparmor_data);" >> apparmor-data.c
 	$(PRE_Q)echo "CC apparmor-data.c"
-	$(PRE_V)$(CC) -c apparmor-data.c -o apparmor-data.o
+	$(PRE_V)$(CC) $(CFLAGS) -c apparmor-data.c -o apparmor-data.o
 	$(PRE_V)rm -f apparmor-data.c
 
 #
 #  extract the PER_* personality enums
 #
 personality.h: config.h
-	$(PRE_V)$(CPP) $(CONFIG_CFLAGS) core-personality.c | $(GREP) -e "PER_[A-Z0-9]* =.*," | cut -d "=" -f 1 \
+	$(PRE_V)$(CPP) $(CFLAGS) core-personality.c | $(GREP) -e "PER_[A-Z0-9]* =.*," | cut -d "=" -f 1 \
 	| sed "s/.$$/,/" > personality.h
 	$(PRE_Q)echo "MK personality.h"
 
@@ -603,7 +633,7 @@ dist:
 		COPYING syscalls.txt mascot README.md Dockerfile \
 		README.Android test snap presentations .github \
 		TODO core-perf-event.c usr.bin.pulseaudio.eg \
-		bash-completion example-jobs .travis.yml \
+		core-personality.c bash-completion example-jobs .travis.yml \
 		kernel-coverage.sh code-of-conduct.txt stress-ng-$(VERSION)
 	tar -Jcf stress-ng-$(VERSION).tar.xz stress-ng-$(VERSION)
 	rm -rf stress-ng-$(VERSION)

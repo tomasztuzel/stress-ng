@@ -544,7 +544,7 @@ static void TARGET_CLONES stress_rand_data_ror32(
  *  stress_rand_data_double()
  *	fill buffer with double precision floating point binary data
  */
-static void TARGET_CLONES stress_rand_data_double(
+static void OPTIMIZE3 OPTIMIZE_FAST_MATH stress_rand_data_double(
 	const stress_args_t *args,
 	uint64_t *RESTRICT data,
 	uint64_t *RESTRICT data_end)
@@ -693,7 +693,7 @@ static inline uint32_t TARGET_CLONES stress_builtin_ctz(register uint32_t x)
 
 /*
  *  stress_rand_data_pink()
- *	fill buffer with pink noise 0..255 using an
+ *	fill buffer with pink noise 0..255 using
  *	the Gardner method with the McCartney
  *	selection tree optimization
  */
@@ -1187,8 +1187,7 @@ static const stress_zlib_rand_data_info_t zlib_rand_data_methods[] = {
 	{ "pink",	stress_rand_data_pink },
 	{ "rarely1",	stress_rand_data_rarely_1 },
 	{ "rarely0",	stress_rand_data_rarely_0 },
-#if defined(HAVE_ASM_X86_RDRAND) &&		\
-    defined(STRESS_ARCH_X86_64)
+#if defined(HAVE_ASM_X86_RDRAND)
 	{ "rdrand",	stress_rand_data_rdrand },
 #endif
 	{ "ror32",	stress_rand_data_ror32 },

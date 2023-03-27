@@ -163,14 +163,14 @@ bind_umount:
  */
 static int stress_bind_mount(const stress_args_t *args)
 {
-	int pid = 0, status, ret;
+	int status, ret;
 	char path[PATH_MAX];
 	stress_pthread_args_t pargs = { args, path, 0 };
 
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	(void)stress_temp_dir(path, sizeof(path), args->name, getpid(), args->instance);
-	ret = mkdir(path, S_IRUSR | S_IRUSR | S_IRGRP | S_IWGRP);
+	ret = mkdir(path, S_IRUSR | S_IRGRP | S_IWGRP);
 	if (ret < 0) {
 		(void)shim_rmdir(path);
 		pr_err("%s: mkdir %s failed, errno=%d (%s)\n",
@@ -179,12 +179,13 @@ static int stress_bind_mount(const stress_args_t *args)
 	}
 
 	do {
+		pid_t pid;
 		static char stack[CLONE_STACK_SIZE];
 		char *stack_top = (char *)stress_get_stack_top((void *)stack, CLONE_STACK_SIZE);
 
 		(void)memset(stack, 0, sizeof stack);
 
-		pid = clone(stress_bind_mount_child,
+		pid = (pid_t)clone(stress_bind_mount_child,
 			stress_align_stack(stack_top),
 			CLONE_NEWUSER | CLONE_NEWNS | CLONE_VM | SIGCHLD,
 			(void *)&pargs, 0);

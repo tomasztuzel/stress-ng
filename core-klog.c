@@ -64,6 +64,7 @@ void stress_klog_start(void)
 	if (klog_pid == 0) {
 		char buf[8192];
 
+		stress_set_proc_state_str("klog","monitoring");
 		(void)fseek(klog_fp, 0, SEEK_END);
 
 		while (fgets(buf, sizeof(buf), klog_fp)) {
@@ -131,6 +132,7 @@ void stress_klog_start(void)
 
 log_err:
 			if (stress_klog_err_no_exceptions(buf)) {
+				stress_dump_processes();
 				pr_err("klog-check: %s: %s '%s'\n", msg, ts, ptr);
 				g_shared->klog_error = true;
 				continue;

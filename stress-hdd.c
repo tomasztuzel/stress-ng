@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-pragma.h"
 
 #if defined(HAVE_SYS_UIO_H)
 #include <sys/uio.h>
@@ -208,9 +209,12 @@ static ssize_t stress_hdd_write(
 	uint8_t *buf,
 	const off_t offset,
 	const uint64_t hdd_write_size,
-	const int hdd_flags)
+	const int hdd_flags,
+	double *hdd_write_bytes,
+	double *hdd_write_duration)
 {
-	ssize_t ret;
+	ssize_t ret = -1;
+	double t;
 
 #if defined(HAVE_FUTIMES)
 	if (hdd_flags & HDD_OPT_UTIMES)
@@ -236,34 +240,59 @@ static ssize_t stress_hdd_write(
 		switch (stress_mwc8modn(3)) {
 #if defined(HAVE_PWRITEV2)
 		case 0:
+			t = stress_time_now();
 			ret = pwritev2(fd, iov, HDD_IO_VEC_MAX, offset, 0);
+			if (ret > 0) {
+				(*hdd_write_duration) += stress_time_now() - t;
+				(*hdd_write_bytes) += (double)ret;
+			}
 			break;
 #endif
 #if defined(HAVE_PWRITEV)
 		case 1:
+			t = stress_time_now();
 			ret = pwritev(fd, iov, HDD_IO_VEC_MAX, offset);
+			if (ret > 0) {
+				(*hdd_write_duration) += stress_time_now() - t;
+				(*hdd_write_bytes) += (double)ret;
+			}
 			break;
 #endif
 		default:
+			t = stress_time_now();
 			if (lseek(fd, offset, SEEK_SET) < 0) {
 				ret = -1;
 			} else {
 				ret = writev(fd, iov, HDD_IO_VEC_MAX);
+				if (ret > 0) {
+					(*hdd_write_duration) += stress_time_now() - t;
+					(*hdd_write_bytes) += (double)ret;
+				}
 			}
 			break;
 		}
 #else
+		t = stress_time_now();
 		if (lseek(fd, offset, SEEK_SET) < 0) {
 			ret = -1;
 		} else {
 			ret = write(fd, buf, (size_t)hdd_write_size);
+			if (ret > 0) {
+				(*hdd_write_duration) += stress_time_now() - t;
+				(*hdd_write_bytes) += (double)ret;
+			}
 		}
 #endif
 	} else {
+		t = stress_time_now();
 		if (lseek(fd, offset, SEEK_SET) < 0) {
 			ret = -1;
 		} else {
 			ret = write(fd, buf, (size_t)hdd_write_size);
+			if (ret > 0) {
+				(*hdd_write_duration) += stress_time_now() - t;
+				(*hdd_write_bytes) += (double)ret;
+			}
 		}
 	}
 
@@ -298,8 +327,13 @@ static ssize_t stress_hdd_read(
 	uint8_t *buf,
 	const off_t offset,
 	const uint64_t hdd_read_size,
-	const int hdd_flags)
+	const int hdd_flags,
+	double *hdd_read_bytes,
+	double *hdd_read_duration)
 {
+	ssize_t ret = -1;
+	double t;
+
 #if defined(HAVE_FUTIMES)
 	if (hdd_flags & HDD_OPT_UTIMES)
 		stress_hdd_utimes(fd);
@@ -324,27 +358,58 @@ static ssize_t stress_hdd_read(
 		switch (stress_mwc8modn(3)) {
 #if defined(HAVE_PREADV2)
 		case 0:
-			return preadv2(fd, iov, HDD_IO_VEC_MAX, offset, 0);
+			t = stress_time_now();
+			ret = preadv2(fd, iov, HDD_IO_VEC_MAX, offset, 0);
+			if (ret > 0) {
+				(*hdd_read_duration) += stress_time_now() - t;
+				(*hdd_read_bytes) += (double)ret;
+			}
+			return ret;
 #endif
 #if defined(HAVE_PREADV)
 		case 1:
-			return preadv(fd, iov, HDD_IO_VEC_MAX, offset);
+			t = stress_time_now();
+			ret = preadv(fd, iov, HDD_IO_VEC_MAX, offset);
+			if (ret > 0) {
+				(*hdd_read_duration) += stress_time_now() - t;
+				(*hdd_read_bytes) += (double)ret;
+			}
+			return ret;
 #endif
 		default:
+			t = stress_time_now();
 			if (lseek(fd, offset, SEEK_SET) < 0)
 				return -1;
-			return readv(fd, iov, HDD_IO_VEC_MAX);
+			ret = readv(fd, iov, HDD_IO_VEC_MAX);
+			if (ret > 0) {
+				(*hdd_read_duration) += stress_time_now() - t;
+				(*hdd_read_bytes) += (double)ret;
+			}
+			return ret;
 		}
 #else
+		t = stress_time_now();
 		if (lseek(fd, offset, SEEK_SET) < 0)
 			return -1;
-		return read(fd, buf, (size_t)hdd_read_size);
+		ret = read(fd, buf, (size_t)hdd_read_size);
+		if (ret > 0) {
+			(*hdd_read_duration) += stress_time_now() - t;
+			(*hdd_read_bytes) += (double)ret;
+		}
+		return ret;
 #endif
 	} else {
+		t = stress_time_now();
 		if (lseek(fd, offset, SEEK_SET) < 0)
 			return -1;
-		return read(fd, buf, (size_t)hdd_read_size);
+		ret = read(fd, buf, (size_t)hdd_read_size);
+		if (ret > 0) {
+			(*hdd_read_duration) += stress_time_now() - t;
+			(*hdd_read_bytes) += (double)ret;
+		}
+		return ret;
 	}
+	return ret;
 }
 
 /*
@@ -560,11 +625,25 @@ static int stress_hdd_advise(const stress_args_t *args, const int fd, const int 
  *  data_value()
  *	generate 8 bit data value for offsets and instance # into a test file
  */
-static inline uint8_t data_value(const uint64_t i, uint64_t j, const stress_args_t *args)
+static inline uint8_t OPTIMIZE3 data_value(const uint64_t i, uint64_t j, const uint32_t instance)
 {
-	register uint8_t v = (uint8_t)(((i + j) >> 9) + i + j + args->instance);
+	register uint8_t v = (uint8_t)(((i + j) >> 9) + i + j + instance);
 
 	return v;
+}
+
+static void OPTIMIZE3 hdd_fill_buf(
+	uint8_t *buf,
+	const uint64_t buf_size,
+	const uint64_t i,
+	const uint32_t instance)
+{
+	register uint64_t j;
+
+PRAGMA_UNROLL_N(4)
+	for (j = 0; j < buf_size; j++) {
+		buf[j] = data_value(i, j, instance);
+	}
 }
 
 /*
@@ -582,9 +661,14 @@ static int stress_hdd(const stress_args_t *args)
 	size_t opt_index = 0;
 	uint64_t hdd_bytes = DEFAULT_HDD_BYTES;
 	uint64_t hdd_write_size = DEFAULT_HDD_WRITE_SIZE;
+	const uint32_t instance = args->instance;
 	int hdd_flags = 0, hdd_oflags = 0;
 	int flags, fadvise_flags;
 	bool opts_set = false;
+	double hdd_read_bytes = 0.0, hdd_read_duration = 0.0;
+	double hdd_write_bytes = 0.0, hdd_write_duration = 0.0;
+	double hdd_rdwr_bytes, hdd_rdwr_duration;
+	double rate;
 
 	(void)stress_get_setting("hdd-flags", &hdd_flags);
 	(void)stress_get_setting("hdd-oflags", &hdd_oflags);
@@ -641,7 +725,6 @@ static int stress_hdd(const stress_args_t *args)
 			PRIu64 " bytes\n",
 			args->name, hdd_bytes);
 	}
-
 
 	ret = stress_temp_dir_mk_args(args);
 	if (ret < 0)
@@ -717,13 +800,7 @@ static int stress_hdd(const stress_args_t *args)
 
 		fs_type = stress_fs_type(filename);
 
-#if defined(F_SET_FILE_RW_HINT) &&	\
-    defined(RWH_WRITE_LIFE_SHORT)
-		{
-			uint64_t hint = RWH_WRITE_LIFE_SHORT;
-			VOID_RET(int, fcntl(fd, F_SET_FILE_RW_HINT, &hint));
-		}
-#endif
+		stress_file_rw_hint_short(fd);
 
 		/* Exercise ftruncate or truncate */
 		if (stress_mwc1()) {
@@ -777,7 +854,6 @@ static int stress_hdd(const stress_args_t *args)
 			stress_mwc_set_seed(w, z);
 
 			for (i = 0; i < hdd_bytes; i += hdd_write_size) {
-				size_t j;
 				uint64_t offset = (i == 0) ?
 					hdd_bytes : stress_mwc64modn(hdd_bytes) & ~511UL;
 rnd_wr_retry:
@@ -786,12 +862,11 @@ rnd_wr_retry:
 					goto yielded;
 				}
 
-				for (j = 0; j < hdd_write_size; j++) {
-					buf[j] = data_value(offset, j, args);
-				}
+				hdd_fill_buf(buf, hdd_write_size, offset, instance);
 
 				ret = stress_hdd_write(fd, buf, (off_t)offset,
-					hdd_write_size, hdd_flags);
+					hdd_write_size, hdd_flags,
+					&hdd_write_bytes, &hdd_write_duration);
 				if (ret <= 0) {
 					if ((errno == EAGAIN) || (errno == EINTR))
 						goto rnd_wr_retry;
@@ -813,17 +888,17 @@ rnd_wr_retry:
 		/* Sequential Write */
 		if (hdd_flags & HDD_OPT_WR_SEQ) {
 			for (i = 0; i < hdd_bytes; i += hdd_write_size) {
-				size_t j;
 seq_wr_retry:
 				if (!keep_stressing(args)) {
 					(void)close(fd);
 					goto yielded;
 				}
 
-				for (j = 0; j < hdd_write_size; j++)
-					buf[j] = data_value(i, j, args);
+				hdd_fill_buf(buf, hdd_write_size, i, instance);
+
 				ret = stress_hdd_write(fd, buf, (off_t)i,
-					hdd_write_size, hdd_flags);
+					hdd_write_size, hdd_flags,
+					&hdd_write_bytes, &hdd_write_duration);
 				if (ret <= 0) {
 					if ((errno == EAGAIN) || (errno == EINTR))
 						goto seq_wr_retry;
@@ -863,7 +938,8 @@ seq_rd_retry:
 					goto yielded;
 				}
 				ret = stress_hdd_read(fd, buf, (off_t)i,
-					hdd_write_size, hdd_flags);
+					hdd_write_size, hdd_flags,
+					&hdd_read_bytes, &hdd_read_duration);
 				if (ret <= 0) {
 					if ((errno == EAGAIN) || (errno == EINTR))
 						goto seq_rd_retry;
@@ -887,20 +963,18 @@ seq_rd_retry:
 
 						/* Write seq has written to all of the file, so it should always be OK */
 						for (j = 0; j < (size_t)ret; j++) {
-							const uint8_t v = data_value(i, j, args);
+							register const uint8_t v = data_value(i, j, instance);
 
-							if (buf[j] != v)
-								baddata++;
+							baddata += (buf[j] != v);
 						}
 					} else {
 						size_t j;
 
 						/* Write rnd has written to some of the file, so data either zero or OK */
 						for (j = 0; j < (size_t)ret; j++) {
-							const uint8_t v = data_value(i, j, args);
+							register const uint8_t v = data_value(i, j, instance);
 
-							if ((buf[j] != 0) && (buf[j] != v))
-								baddata++;
+							baddata += ((buf[j] != 0) && (buf[j] != v));
 						}
 					}
 				}
@@ -935,7 +1009,8 @@ rnd_rd_retry:
 					goto yielded;
 				}
 				ret = stress_hdd_read(fd, buf, (off_t)offset,
-					hdd_write_size, hdd_flags);
+					hdd_write_size, hdd_flags,
+					&hdd_read_bytes, &hdd_read_duration);
 				if (ret <= 0) {
 					if ((errno == EAGAIN) || (errno == EINTR))
 						goto rnd_rd_retry;
@@ -956,7 +1031,8 @@ rnd_rd_retry:
 					size_t j;
 
 					for (j = 0; j < (size_t)ret; j++) {
-						uint8_t v = data_value(offset, j, args);
+						register uint8_t v = data_value(offset, j, instance);
+
 						if (hdd_flags & HDD_OPT_WR_SEQ) {
 							/* Write seq has written to all of the file, so it should always be OK */
 							if (buf[j] != v)
@@ -986,6 +1062,17 @@ yielded:
 	rc = EXIT_SUCCESS;
 finish:
 	stress_set_proc_state(args->name, STRESS_STATE_DEINIT);
+
+	rate = (hdd_read_duration > 0.0) ? hdd_read_bytes / hdd_read_duration : 0.0;
+	stress_metrics_set(args, 0, "MB/sec read rate", rate / (double)MB);
+	rate = (hdd_write_duration > 0.0) ? hdd_write_bytes / hdd_write_duration : 0.0;
+	stress_metrics_set(args, 1, "MB/sec write rate", rate / (double)MB);
+
+	hdd_rdwr_duration = hdd_read_duration + hdd_write_duration;
+	hdd_rdwr_bytes = hdd_read_bytes + hdd_write_bytes;
+
+	rate = (hdd_rdwr_duration > 0.0) ? hdd_rdwr_bytes / hdd_rdwr_duration : 0.0;
+	stress_metrics_set(args, 2, "MB/sec read/write combined rate", rate / (double)MB);
 
 	free(alloc_buf);
 	(void)stress_temp_dir_rm_args(args);

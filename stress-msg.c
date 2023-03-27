@@ -27,14 +27,28 @@
 #include <sys/msg.h>
 #endif
 
+#define MIN_MSG_BYTES		(4)
+#define MAX_MSG_BYTES		(8192)
+
 #define STRESS_MAX_IDS		(1024)
 
 static const stress_help_t help[] = {
 	{ NULL,	"msg N",	"start N workers stressing System V messages" },
 	{ NULL,	"msg-ops N",	"stop msg workers after N bogo messages" },
 	{ NULL, "msg-types N",	"enable N different message types" },
+	{ NULL, "msg-bytes N",	"set the message size 4..8192" },
 	{ NULL,	NULL,		NULL }
 };
+
+static int stress_set_msg_bytes(const char *opt)
+{
+	size_t bytes;
+
+	bytes = (size_t)stress_get_uint64_byte_memory(opt, 1);
+	stress_check_range_bytes("msg-bytes", bytes,
+		MIN_MSG_BYTES, MAX_MSG_BYTES);
+	return stress_set_setting("msg-bytes", TYPE_ID_SIZE_T, &bytes);
+}
 
 static int stress_set_msg_types(const char *opt) {
 	int32_t msg_types;
@@ -46,6 +60,7 @@ static int stress_set_msg_types(const char *opt) {
 
 static const stress_opt_set_func_t opt_set_funcs[] = {
 	{ OPT_msg_types,	stress_set_msg_types },
+	{ OPT_msg_bytes,	stress_set_msg_bytes },
 	{ 0,                    NULL },
 };
 
@@ -55,7 +70,10 @@ static const stress_opt_set_func_t opt_set_funcs[] = {
 
 typedef struct {
 	long mtype;
-	uint32_t value;
+	union {
+		uint32_t value;
+		char data[MAX_MSG_BYTES];
+	} u;
 } stress_msg_t;
 
 static int stress_msg_get_stats(const stress_args_t *args, const int msgq_id)
@@ -144,12 +162,12 @@ static void stress_msgget(void)
 
 	/* Illegal key */
 	msgq_id = msgget(-1, S_IRUSR | S_IWUSR);
-	if (msgq_id >= 0)
+	if (UNLIKELY(msgq_id >= 0))
 		(void)msgctl(msgq_id, IPC_RMID, NULL);
 
 	/* All flags, probably succeeds */
 	msgq_id = msgget(IPC_CREAT, ~0);
-	if (msgq_id >= 0)
+	if (UNLIKELY(msgq_id >= 0))
 		(void)msgctl(msgq_id, IPC_RMID, NULL);
 }
 
@@ -158,22 +176,22 @@ static void stress_msgget(void)
  *  stress_msgsnd()
  *	exercise msgsnd with some more unusual arguments
  */
-static void stress_msgsnd(const int msgq_id)
+static void stress_msgsnd(const int msgq_id, const size_t msg_bytes)
 {
-	stress_msg_t msg;
+	stress_msg_t msg ALIGN64;
 
 	/* Invalid msgq_id */
-	msg.mtype = 1;
-	msg.value = 0;
-	VOID_RET(int, msgsnd(-1, &msg, sizeof(msg.value), 0));
+	msg.mtype = 0;
+	msg.u.value = 0;
+	VOID_RET(int, msgsnd(-1, &msg, msg_bytes, 0));
 
 	/* Zero msg length + 0 msg.type */
 	msg.mtype = 0;
 	VOID_RET(int, msgsnd(msgq_id, &msg, 0, 0));
 
 	/* Illegal flags, may or may not succeed */
-	msg.mtype = 1;
-	VOID_RET(int, msgsnd(msgq_id, &msg, sizeof(msg.value), ~0));
+	msg.mtype = 0;
+	VOID_RET(int, msgsnd(msgq_id, &msg, msg_bytes, ~0));
 }
 
 #if defined(__linux__)
@@ -186,16 +204,14 @@ static void stress_msg_get_procinfo(bool *get_procinfo)
 	int fd;
 
 	fd = open("/proc/sysvipc/msg", O_RDONLY);
-	if (fd < 0) {
+	if (UNLIKELY(fd < 0)) {
 		*get_procinfo = false;
 		return;
 	}
 	for (;;) {
-		ssize_t ret;
-		char buffer[1024];
+		char buffer[4096] ALIGN64;
 
-		ret = read(fd, buffer, sizeof(buffer));
-		if (ret <= 0)
+		if (read(fd, buffer, sizeof(buffer)) <= 0)
 			break;
 	}
 	(void)close(fd);
@@ -219,6 +235,134 @@ static inline size_t stress_max_ids(const stress_args_t *args)
 	return max_ids;
 }
 
+static void OPTIMIZE3 stress_msg_receiver(
+	const stress_args_t *args,
+	const int msgq_id,
+	const int32_t msg_types,
+	const size_t msg_bytes)
+{
+	stress_msg_t ALIGN64 msg;
+	const bool verify = !!(g_opt_flags & OPT_FLAGS_VERIFY);
+
+	stress_parent_died_alarm();
+	(void)sched_settings_apply(true);
+
+	while (keep_stressing(args)) {
+		register uint32_t i;
+		register const long mtype = msg_types == 0 ? 0 : -(msg_types + 1);
+
+		for (i = 0; keep_stressing(args); i++) {
+			ssize_t msgsz;
+
+#if defined(MSG_COPY) &&	\
+    defined(IPC_NOWAIT)
+			/*
+			 *  Very occasionally peek with a MSG_COPY, ignore
+			 *  the return as we just want to exercise the flag
+			 *  and we don't care if it succeeds or not
+			 */
+			if (UNLIKELY((i & 0xfff) == 0)) {
+				VOID_RET(ssize_t, msgrcv(msgq_id, &msg, msg_bytes, mtype,
+					MSG_COPY | IPC_NOWAIT));
+			}
+#endif
+			if (UNLIKELY((i & 0x1ff) == 0)) {
+				/* Exercise invalid msgrcv queue ID */
+				(void)msgrcv(-1, &msg, msg_bytes, mtype, 0);
+
+				/* Exercise invalid msgrcv message size */
+				(void)msgrcv(msgq_id, &msg, (size_t)-1, mtype, 0);
+				(void)msgrcv(msgq_id, &msg, 0, mtype, 0);
+
+				/* Exercise invalid msgrcv message flag */
+				(void)msgrcv(msgq_id, &msg, msg_bytes, mtype, ~0);
+			}
+
+			msgsz = msgrcv(msgq_id, &msg, msg_bytes, mtype, 0);
+			if (UNLIKELY(msgsz < 0)) {
+				/*
+				 * Check for errors that can occur
+				 * when the termination occurs and
+				 * retry
+				 */
+				if ((errno == E2BIG) || (errno == EINTR))
+					continue;
+
+				pr_fail("%s: msgrcv failed, errno=%d (%s)\n",
+					args->name, errno, strerror(errno));
+				break;
+			}
+			/*  Short data in message, bail out */
+			if (UNLIKELY(msgsz < (ssize_t)sizeof(msg.u.value)))
+				break;
+			/*
+			 *  Only when msg_types is not set can we fetch
+			 *  data in an ordered FIFO to sanity check data
+			 *  ordering.
+			 */
+			if (UNLIKELY(verify && (msg_types == 0))) {
+				if (UNLIKELY(msg.u.value != i))
+					pr_fail("%s: msgrcv: expected msg containing 0x%" PRIx32
+						" but received 0x%" PRIx32 " instead (data length %zd)\n",
+						 args->name, i, msg.u.value, msgsz);
+			}
+		}
+	}
+}
+
+static void OPTIMIZE3 stress_msg_sender(
+	const stress_args_t *args,
+	const int msgq_id,
+	const int32_t msg_types,
+	const size_t msg_bytes)
+{
+	stress_msg_t ALIGN64 msg;
+#if defined(__linux__)
+	bool get_procinfo = true;
+#endif
+
+	/* Parent */
+	(void)memset(&msg.u.data, '#', sizeof(msg.u.data));
+	msg.u.value = 0;
+
+	do {
+		msg.mtype = (msg_types) ? stress_mwc8modn(msg_types) + 1 : 1;
+		if (UNLIKELY(msgsnd(msgq_id, &msg, msg_bytes, 0) < 0)) {
+			if (errno != EINTR)
+				pr_fail("%s: msgsnd failed, errno=%d (%s)\n",
+					args->name, errno, strerror(errno));
+			break;
+		}
+		msg.u.value++;
+		inc_counter(args);
+		if (UNLIKELY((msg.u.value & 0xff) == 0)) {
+			if (stress_msg_get_stats(args, msgq_id) < 0)
+				break;
+#if defined(__NetBSD__)
+			/*
+			 *  NetBSD can shove loads of messages onto
+			 *  a queue before it blocks, so force
+			 *  a scheduling yield every so often so that
+			 *  consumer can read them.
+			 */
+			(void)shim_sched_yield();
+#endif
+
+#if defined(__linux__)
+			/*
+			 *  Periodically read /proc/sysvipc/msg to exercise
+			 *  this interface if it exists
+			 */
+			if (UNLIKELY(get_procinfo && ((msg.u.value & 0xffff) == 0)))
+				stress_msg_get_procinfo(&get_procinfo);
+		}
+#endif
+	} while (keep_stressing(args));
+
+	stress_msgsnd(msgq_id, msg_bytes);
+
+}
+
 /*
  *  stress_msg
  *	stress by message queues
@@ -228,14 +372,13 @@ static int stress_msg(const stress_args_t *args)
 	pid_t pid;
 	int msgq_id, rc = EXIT_SUCCESS;
 	int32_t msg_types = 0;
-#if defined(__linux__)
-	bool get_procinfo = true;
-#endif
 	const size_t max_ids = stress_max_ids(args);
 	int *msgq_ids;
-	size_t j, n;
+	stress_msg_t ALIGN64 msg;
+	size_t j, n, msg_bytes = sizeof(msg.u.value);
 
 	(void)stress_get_setting("msg-types", &msg_types);
+	(void)stress_get_setting("msg-bytes", &msg_bytes);
 
 	msgq_ids = calloc(max_ids, sizeof(*msgq_ids));
 	if (!msgq_ids) {
@@ -247,8 +390,12 @@ static int stress_msg(const stress_args_t *args)
 	if (msgq_id < 0) {
 		const int ret = stress_exit_status(errno);
 
-		pr_fail("%s: msgget failed, errno=%d (%s)\n",
-			args->name, errno, strerror(errno));
+		if (ret == EXIT_FAILURE) {
+			pr_fail("%s: msgget failed, errno=%d (%s)\n",
+				args->name, errno, strerror(errno));
+		} else {
+			pr_inf_skip("%s: msgget out of resources or not implemented, skipping stessor\n", args->name);
+		}
 		free(msgq_ids);
 		return ret;
 	}
@@ -281,111 +428,12 @@ again:
 		rc = EXIT_FAILURE;
 		goto cleanup;
 	} else if (pid == 0) {
-		stress_parent_died_alarm();
-		(void)sched_settings_apply(true);
-
-		while (keep_stressing(args)) {
-			stress_msg_t ALIGN64 msg;
-			register uint32_t i;
-			register const long mtype = msg_types == 0 ? 0 : -(msg_types + 1);
-
-			for (i = 0; keep_stressing(args); i++) {
-#if defined(MSG_COPY) &&	\
-    defined(IPC_NOWAIT)
-				/*
-				 *  Very occasionally peek with a MSG_COPY, ignore
-				 *  the return as we just want to exercise the flag
-				 *  and we don't care if it succeeds or not
-				 */
-				if ((i & 0xfff) == 0) {
-					VOID_RET(ssize_t, msgrcv(msgq_id, &msg, sizeof(msg.value), mtype,
-						MSG_COPY | IPC_NOWAIT));
-				}
-#endif
-
-				if ((i & 0x1ff) == 0) {
-					/* Exercise invalid msgrcv queue ID */
-					(void)msgrcv(-1, &msg, sizeof(msg.value), mtype, 0);
-
-					/* Exercise invalid msgrcv message size */
-					(void)msgrcv(msgq_id, &msg, (size_t)-1, mtype, 0);
-					(void)msgrcv(msgq_id, &msg, 0, mtype, 0);
-
-					/* Exercise invalid msgrcv message flag */
-					(void)msgrcv(msgq_id, &msg, sizeof(msg.value), mtype, ~0);
-				}
-
-				if (msgrcv(msgq_id, &msg, sizeof(msg.value), mtype, 0) < 0) {
-					/*
-					 * Check for errors that can occur
-					 * when the termination occurs and
-					 * retry
-					 */
-					if ((errno == E2BIG) || (errno == EINTR))
-						continue;
-
-					pr_fail("%s: msgrcv failed, errno=%d (%s)\n",
-						args->name, errno, strerror(errno));
-					break;
-				}
-				/*
-				 *  Only when msg_types is not set can we fetch
-				 *  data in an ordered FIFO to sanity check data
-				 *  ordering.
-				 */
-				if ((msg_types == 0) && (g_opt_flags & OPT_FLAGS_VERIFY)) {
-					if (msg.value != i)
-						pr_fail("%s: msgrcv: expected msg containing 0x%" PRIx32
-							" but received 0x%" PRIx32 " instead\n",
-							 args->name, i, msg.value);
-				}
-			}
-			_exit(EXIT_SUCCESS);
-		}
+		stress_msg_receiver(args, msgq_id, msg_types, msg_bytes);
+		_exit(EXIT_SUCCESS);
 	} else {
-		stress_msg_t ALIGN64 msg;
 		int status;
 
-		/* Parent */
-		msg.value = 0;
-
-		do {
-			msg.mtype = (msg_types) ? stress_mwc8modn(msg_types) + 1 : 1;
-			if (msgsnd(msgq_id, &msg, sizeof(msg.value), 0) < 0) {
-				if (errno != EINTR)
-					pr_fail("%s: msgsnd failed, errno=%d (%s)\n",
-						args->name, errno, strerror(errno));
-				break;
-			}
-			msg.value++;
-			inc_counter(args);
-			if ((msg.value & 0xff) == 0) {
-				if (stress_msg_get_stats(args, msgq_id) < 0)
-					break;
-#if defined(__NetBSD__)
-				/*
-				 *  NetBSD can shove loads of messages onto
-				 *  a queue before it blocks, so force
-				 *  a scheduling yield every so often so that
-				 *  consumer can read them.
-				 */
-				(void)shim_sched_yield();
-#endif
-			}
-
-#if defined(__linux__)
-			/*
-			 *  Periodically read /proc/sysvipc/msg to exercise
-			 *  this interface if it exists
-			 */
-			if (get_procinfo && ((msg.value & 0xffff) == 0))
-				stress_msg_get_procinfo(&get_procinfo);
-#endif
-
-		} while (keep_stressing(args));
-
-		stress_msgsnd(msgq_id);
-
+		stress_msg_sender(args, msgq_id, msg_types, msg_bytes);
 		(void)kill(pid, SIGKILL);
 		(void)shim_waitpid(pid, &status, 0);
 
@@ -401,7 +449,7 @@ cleanup:
 
 	for (j = 0; j < n; j++) {
 		if (msgq_ids[j] >= 0)
-			msgctl(msgq_ids[j], IPC_RMID, NULL);
+			(void)msgctl(msgq_ids[j], IPC_RMID, NULL);
 	}
 	free(msgq_ids);
 

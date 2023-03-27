@@ -113,6 +113,9 @@ static const stress_opt_set_func_t opt_set_funcs[] = {
 	defined(HAVE_LIB_GBM) &&	\
 	defined(HAVE_GBM_H)
 
+static volatile bool do_jmp = true;
+static sigjmp_buf jmp_env;
+
 static GLuint program;
 static EGLDisplay display;
 static EGLSurface surface;
@@ -334,7 +337,7 @@ static void stress_gpu_run(const GLsizei texsize, const GLsizei uploads)
 	if (texsize > 0) {
 		int i;
 
-		for (i = 0; i < uploads; i++) {
+		for (i = 0; keep_stressing_flag() && (i < uploads); i++) {
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texsize,
 				     texsize, 0, GL_RGBA, GL_UNSIGNED_BYTE,
 				     teximage);
@@ -420,7 +423,7 @@ static int egl_init(
 
 	fd = open(gpu_devnode, O_RDWR);
 	if (fd < 0) {
-		pr_inf_skip("%s: couldn't open device %s: %d (%s), skipping stressor\n",
+		pr_inf_skip("%s: couldn't open device '%s': errno=%d (%s), skipping stressor\n",
 			args->name, gpu_devnode, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
@@ -478,7 +481,33 @@ static int egl_init(
 	return EXIT_SUCCESS;
 }
 
-static int stress_gpu(const stress_args_t *args)
+static int stress_gpu_supported(const char *name)
+{
+	const char *gpu_devnode = default_gpu_devnode;
+	int fd;
+
+	(void)stress_get_setting("gpu-devnode", &gpu_devnode);
+	fd = open(gpu_devnode, O_RDWR);
+	if (fd < 0) {
+		pr_inf_skip("%s: cannot open GPU device '%s', errno=%d (%s), skipping stressor\n",
+			name, gpu_devnode, errno, strerror(errno));
+		return -1;
+	}
+	(void)close(fd);
+	return 0;
+}
+
+static void stress_gpu_alarm_handler(int sig)
+{
+	(void)sig;
+
+	if (do_jmp) {
+		do_jmp = false;
+		siglongjmp(jmp_env, 1);         /* Ugly, bounce back */
+        }
+}
+
+static int stress_gpu_child(const stress_args_t *args, void *context)
 {
 	int frag_n = 0;
 	int ret;
@@ -487,6 +516,14 @@ static int stress_gpu(const stress_args_t *args)
 	GLsizei texsize = 4096;
 	GLsizei uploads = 1;
 	const char *gpu_devnode = default_gpu_devnode;
+	struct sigaction old_action;
+
+	(void)context;
+
+	if (stress_sighandler(args->name, SIGALRM, stress_gpu_alarm_handler, &old_action) < 0)
+		return EXIT_NO_RESOURCE;
+
+	(void)setenv("MESA_SHADER_CACHE_DISABLE", "true", 1);
 
 	(void)stress_get_setting("gpu-devnode", &gpu_devnode);
 	(void)stress_get_setting("gpu-frag", &frag_n);
@@ -505,12 +542,24 @@ static int stress_gpu(const stress_args_t *args)
 
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
+	ret = sigsetjmp(jmp_env, 1);
+	if (ret) {
+		/*
+		 * We return here if SIGALRM jmp'd back
+		 */
+		goto finish;
+	}
+
 	do {
 		stress_gpu_run(texsize, uploads);
 		if (glGetError() != GL_NO_ERROR)
 			return EXIT_NO_RESOURCE;
 		inc_counter(args);
 	} while (keep_stressing(args));
+
+finish:
+	do_jmp = false;
+	(void)stress_sigrestore(args->name, SIGALRM, &old_action);
 
 	ret = EXIT_SUCCESS;
 deinit:
@@ -522,10 +571,16 @@ deinit:
 	return ret;
 }
 
+static int stress_gpu(const stress_args_t *args)
+{
+	return stress_oomable_child(args, NULL, stress_gpu_child, STRESS_OOMABLE_NORMAL);
+}
+
 stressor_info_t stress_gpu_info = {
 	.stressor = stress_gpu,
 	.class = CLASS_GPU,
 	.opt_set_funcs = opt_set_funcs,
+	.supported = stress_gpu_supported,
 	.help = help
 };
 #else

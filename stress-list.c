@@ -30,15 +30,10 @@
 
 struct list_entry;
 
-typedef struct {
-	double	duration;
-	double	count;
-} stress_list_metrics_t;
-
 typedef void (*stress_list_func)(const stress_args_t *args,
-				 const size_t n,
-				 struct list_entry *data,
-				 stress_list_metrics_t *metrics);
+				 struct list_entry *entries,
+				 struct list_entry *entries_end,
+				 stress_metrics_t *metrics);
 
 typedef struct {
 	const char              *name;  /* human readable form of stressor */
@@ -175,41 +170,38 @@ static void MLOCKED_TEXT stress_list_handler(int signum)
 
 static void OPTIMIZE3 stress_list_slistt(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
 	register struct list_entry *entry, *head, *tail;
 	bool found = false;
 	double t;
 
-	entry = data;
-	head = entry;
-	tail = entry;
-	entry++;
-	for (i = 1; i < n; i++, entry++) {
+	head = entries;
+	tail = entries;
+	for (entry = entries + 1; entry < entries_end; entry++) {
 		tail->u.next = entry;
 		tail = entry;
 	}
 
 	t = stress_time_now();
-	for (entry = head, i = 0; i < n; i++, entry++) {
+	for (entry = head; entry < entries_end; entry++) {
 		register struct list_entry *find;
 
 		for (find = head; find; find = find->u.next) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
 		}
 
-		if (!found)
+		if (UNLIKELY(!found))
 			pr_fail("%s: slistt entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
 	while (head) {
 		register struct list_entry *next = head->u.next;
@@ -220,44 +212,43 @@ static void OPTIMIZE3 stress_list_slistt(
 }
 
 #if defined(HAVE_SYS_QUEUE_LIST)
-static void stress_list_list(
+static void OPTIMIZE3 stress_list_list(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
-	struct list_entry *entry;
+	register struct list_entry *entry;
 	struct listhead head;
 	bool found = false;
 	double t;
 
 	LIST_INIT(&head);
 
-	for (entry = data, i = 0; i < n; i++, entry++) {
+	for (entry = entries; entry < entries_end; entry++) {
 		LIST_INSERT_HEAD(&head, entry, u.list_entries);
 	}
 
 	t = stress_time_now();
-	for (entry = data, i = 0; i < n; i++, entry++) {
-		struct list_entry *find;
+	for (entry = entries; entry < entries_end; entry++) {
+		register struct list_entry *find;
 
 		LIST_FOREACH(find, &head, u.list_entries) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
 		}
 
-		if (!found)
+		if (UNLIKELY(!found))
 			pr_fail("%s: list entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
 	while (!LIST_EMPTY(&head)) {
-		entry = LIST_FIRST(&head);
+		entry = (struct list_entry *)LIST_FIRST(&head);
 		LIST_REMOVE(entry, u.list_entries);
 	}
 	LIST_INIT(&head);
@@ -265,41 +256,40 @@ static void stress_list_list(
 #endif
 
 #if defined(HAVE_SYS_QUEUE_SLIST)
-static void stress_list_slist(
+static void OPTIMIZE3 stress_list_slist(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
-	struct list_entry *entry;
+	register struct list_entry *entry;
 	struct slisthead head;
 	bool found = false;
 	double t;
 
 	SLIST_INIT(&head);
 
-	for (entry = data, i = 0; i < n; i++, entry++) {
+	for (entry = entries; entry < entries_end; entry++) {
 		SLIST_INSERT_HEAD(&head, entry, u.slist_entries);
 	}
 
 	t = stress_time_now();
-	for (entry = data, i = 0; i < n; i++, entry++) {
-		struct list_entry *find;
+	for (entry = entries; entry < entries_end; entry++) {
+		register struct list_entry *find;
 
 		SLIST_FOREACH(find, &head, u.slist_entries) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
 		}
 
-		if (!found)
+		if (UNLIKELY(!found))
 			pr_fail("%s: slist entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
 	while (!SLIST_EMPTY(&head)) {
 		SLIST_REMOVE_HEAD(&head, u.slist_entries);
@@ -309,43 +299,42 @@ static void stress_list_slist(
 #endif
 
 #if defined(HAVE_SYS_QUEUE_CIRCLEQ)
-static void stress_list_circleq(
+static void OPTIMIZE3 stress_list_circleq(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
-	struct list_entry *entry;
+	register struct list_entry *entry;
 	struct circleqhead head;
 	bool found = false;
 	double t;
 
 	CIRCLEQ_INIT(&head);
 
-	for (entry = data, i = 0; i < n; i++, entry++) {
+	for (entry = entries; entry < entries_end; entry++) {
 		CIRCLEQ_INSERT_TAIL(&head, entry, u.circleq_entries);
 	}
 
 	t = stress_time_now();
-	for (entry = data, i = 0; i < n; i++, entry++) {
-		struct list_entry *find;
+	for (entry = entries; entry < entries_end; entry++) {
+		register struct list_entry *find;
 
 		CIRCLEQ_FOREACH(find, &head, u.circleq_entries) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
 		}
 
-		if (!found)
+		if (UNLIKELY(!found))
 			pr_fail("%s: circleq entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
-	while ((entry = CIRCLEQ_FIRST(&head)) != (struct list_entry *)&head) {
+	while ((entry = (struct list_entry *)CIRCLEQ_FIRST(&head)) != (struct list_entry *)&head) {
 		CIRCLEQ_REMOVE(&head, entry, u.circleq_entries);
 	}
 	CIRCLEQ_INIT(&head);
@@ -353,43 +342,42 @@ static void stress_list_circleq(
 #endif
 
 #if defined(HAVE_SYS_QUEUE_STAILQ)
-static void stress_list_stailq(
+static void OPTIMIZE3 stress_list_stailq(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
-	struct list_entry *entry;
+	register struct list_entry *entry;
 	struct stailhead head;
 	bool found = false;
 	double t;
 
 	STAILQ_INIT(&head);
 
-	for (entry = data, i = 0; i < n; i++, entry++) {
+	for (entry = entries; entry < entries_end; entry++) {
 		STAILQ_INSERT_TAIL(&head, entry, u.stailq_entries);
 	}
 
 	t = stress_time_now();
-	for (entry = data, i = 0; i < n; i++, entry++) {
-		struct list_entry *find;
+	for (entry = entries; entry < entries_end; entry++) {
+		register struct list_entry *find;
 
 		STAILQ_FOREACH(find, &head, u.stailq_entries) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
 		}
 
-		if (!found)
+		if (UNLIKELY(!found))
 			pr_fail("%s: stailq entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
-	while ((entry = STAILQ_FIRST(&head)) != NULL) {
+	while ((entry = (struct list_entry *)STAILQ_FIRST(&head)) != NULL) {
 		STAILQ_REMOVE(&head, entry, list_entry, u.stailq_entries);
 	}
 	STAILQ_INIT(&head);
@@ -397,30 +385,29 @@ static void stress_list_stailq(
 #endif
 
 #if defined(HAVE_SYS_QUEUE_TAILQ)
-static void stress_list_tailq(
+static void OPTIMIZE3 stress_list_tailq(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
-	size_t i;
-	struct list_entry *entry;
+	register struct list_entry *entry;
 	struct tailhead head;
 	bool found = false;
 	double t;
 
 	TAILQ_INIT(&head);
 
-	for (entry = data, i = 0; i < n; i++, entry++) {
+	for (entry = entries; entry < entries_end; entry++) {
 		TAILQ_INSERT_TAIL(&head, entry, u.tailq_entries);
 	}
 
 	t = stress_time_now();
-	for (entry = data, i = 0; i < n; i++, entry++) {
-		struct list_entry *find;
+	for (entry = entries; entry < entries_end; entry++) {
+		register struct list_entry *find;
 
 		TAILQ_FOREACH(find, &head, u.tailq_entries) {
-			if (find == entry) {
+			if (UNLIKELY(find == entry)) {
 				found = true;
 				break;
 			}
@@ -428,12 +415,12 @@ static void stress_list_tailq(
 
 		if (!found)
 			pr_fail("%s: tailq entry #%zd not found\n",
-				args->name, i);
+				args->name, entry - entries);
 	}
 	metrics->duration += stress_time_now() - t;
-	metrics->count += (double)i;
+	metrics->count += (double)(entry - entries);
 
-	while ((entry = TAILQ_FIRST(&head)) != NULL) {
+	while ((entry = (struct list_entry *)TAILQ_FIRST(&head)) != NULL) {
 		TAILQ_REMOVE(&head, entry, u.tailq_entries);
 	}
 	TAILQ_INIT(&head);
@@ -442,9 +429,9 @@ static void stress_list_tailq(
 
 static void stress_list_all(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics);
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics);
 
 
 /*
@@ -472,13 +459,13 @@ static const stress_list_method_info_t list_methods[] = {
 
 static void stress_list_all(
 	const stress_args_t *args,
-	const size_t n,
-	struct list_entry *data,
-	stress_list_metrics_t *metrics)
+	struct list_entry *entries,
+	struct list_entry *entries_end,
+	stress_metrics_t *metrics)
 {
 	static size_t index = 1;
 
-	list_methods[index].func(args, n, data, &metrics[index]);
+	list_methods[index].func(args, entries, entries_end, &metrics[index]);
 	index++;
 	if (index >= SIZEOF_ARRAY(list_methods))
 		index = 1;
@@ -521,11 +508,11 @@ static const stress_opt_set_func_t opt_set_funcs[] = {
 static int stress_list(const stress_args_t *args)
 {
 	uint64_t v, list_size = DEFAULT_LIST_SIZE;
-	struct list_entry *entries, *entry;
+	struct list_entry *entries, *entry, *entries_end;
 	size_t n, i, j, bit, list_method = 0;
 	struct sigaction old_action;
 	int ret;
-	stress_list_metrics_t *metrics, list_metrics[SIZEOF_ARRAY(list_methods)];
+	stress_metrics_t *metrics, list_metrics[SIZEOF_ARRAY(list_methods)];
 	stress_list_func func;
 
 	for (i = 0; i < SIZEOF_ARRAY(list_metrics); i++) {
@@ -551,11 +538,7 @@ static int stress_list(const stress_args_t *args)
 			"out of memory, skipping stressor\n", args->name, n);
 		return EXIT_NO_RESOURCE;
 	}
-
-	if (stress_sighandler(args->name, SIGALRM, stress_list_handler, &old_action) < 0) {
-		free(entries);
-		return EXIT_FAILURE;
-	}
+	entries_end = entries + n;
 
 	ret = sigsetjmp(jmp_env, 1);
 	if (ret) {
@@ -565,9 +548,13 @@ static int stress_list(const stress_args_t *args)
 		(void)stress_sigrestore(args->name, SIGALRM, &old_action);
 		goto tidy;
 	}
+	if (stress_sighandler(args->name, SIGALRM, stress_list_handler, &old_action) < 0) {
+		free(entries);
+		return EXIT_FAILURE;
+	}
 
 	v = 0;
-	for (entry = entries, i = 0, bit = 0; i < n; i++, entry++) {
+	for (entry = entries, bit = 0; entry < entries_end; entry++) {
 		if (!bit) {
 			v = stress_mwc64();
 			bit = 1;
@@ -584,10 +571,10 @@ static int stress_list(const stress_args_t *args)
 	do {
 		uint64_t rnd;
 
-		func(args, n, entries, metrics);
+		func(args, entries, entries_end, metrics);
 
 		rnd = stress_mwc64();
-		for (entry = entries, i = 0; i < n; i++, entry++) {
+		for (entry = entries; entry < entries_end; entry++) {
 			register uint64_t value = entry->value ^ rnd;
 
 			entry->value = shim_ror64(value);

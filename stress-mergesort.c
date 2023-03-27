@@ -102,14 +102,6 @@ static int stress_mergesort(const stress_args_t *args)
 		return EXIT_NO_RESOURCE;
 	}
 
-#if !defined(__OpenBSD__) &&	\
-    !defined(__NetBSD__)
-	if (stress_sighandler(args->name, SIGALRM, stress_mergesort_handler, &old_action) < 0) {
-		free(data);
-		return EXIT_FAILURE;
-	}
-#endif
-
 	ret = sigsetjmp(jmp_env, 1);
 	if (ret) {
 		/*
@@ -118,6 +110,15 @@ static int stress_mergesort(const stress_args_t *args)
 		(void)stress_sigrestore(args->name, SIGALRM, &old_action);
 		goto tidy;
 	}
+
+
+#if !defined(__OpenBSD__) &&	\
+    !defined(__NetBSD__)
+	if (stress_sighandler(args->name, SIGALRM, stress_mergesort_handler, &old_action) < 0) {
+		free(data);
+		return EXIT_FAILURE;
+	}
+#endif
 
 	stress_sort_data_int32_init(data, n);
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
@@ -130,7 +131,7 @@ static int stress_mergesort(const stress_args_t *args)
 		stress_sort_compare_reset();
 		t = stress_time_now();
 		/* Sort "random" data */
-		if (mergesort(data, n, sizeof(*data), stress_sort_cmp_int32) < 0) {
+		if (mergesort(data, n, sizeof(*data), stress_sort_cmp_fwd_int32) < 0) {
 			pr_fail("%s: mergesort of random data failed: %d (%s)\n",
 				args->name, errno, strerror(errno));
 		} else {
@@ -176,17 +177,10 @@ static int stress_mergesort(const stress_args_t *args)
 		}
 		if (!keep_stressing_flag())
 			break;
-		/* And re-order by uint64 compare */
+
+		/* And re-order */
+		stress_sort_data_int32_mangle(data, n);
 		stress_sort_compare_reset();
-		t = stress_time_now();
-		if (mergesort(data, n / 2, sizeof(int64_t), stress_sort_cmp_int64) < 0) {
-			pr_fail("%s: mergesort failed: %d (%s)\n",
-				args->name, errno, strerror(errno));
-		} else {
-			duration += stress_time_now() - t;
-			count += (double)stress_sort_compare_get();
-			sorted += (double)n;
-		}
 
 		/* Reverse sort this again */
 		stress_sort_compare_reset();

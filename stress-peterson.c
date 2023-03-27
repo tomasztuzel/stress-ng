@@ -17,7 +17,7 @@
  *
  */
 #include "stress-ng.h"
-#include "core-cache.h"
+#include "core-cpu-cache.h"
 
 static const stress_help_t help[] = {
 	{ NULL,	"peterson N",		"start N workers that exercise Peterson's algorithm" },
@@ -26,11 +26,6 @@ static const stress_help_t help[] = {
 };
 
 #if defined(HAVE_SHIM_MFENCE)
-
-typedef struct {
-	double 		duration;
-	double 		count;
-} peterson_metrics_t;
 
 typedef struct {
 	volatile int	turn;
@@ -45,9 +40,9 @@ typedef struct {
 typedef struct peterson {
 	peterson_mutex_t	m;
 	char 			pad1[64 - sizeof(peterson_mutex_t)];
-	peterson_metrics_t	p0;
-	char 			pad2[64 - sizeof(peterson_metrics_t)];
-	peterson_metrics_t	p1;
+	stress_metrics_t	p0;
+	char 			pad2[64 - sizeof(stress_metrics_t)];
+	stress_metrics_t	p1;
 } peterson_t;
 
 static peterson_t *peterson;

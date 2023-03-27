@@ -166,6 +166,7 @@
 	MACRO(mmapfork)		\
 	MACRO(mmaphuge)		\
 	MACRO(mmapmany)		\
+	MACRO(module)		\
 	MACRO(mprotect)		\
 	MACRO(mq)		\
 	MACRO(mremap)		\
@@ -297,6 +298,7 @@
 	MACRO(tun)		\
 	MACRO(udp)		\
 	MACRO(udp_flood)	\
+	MACRO(umount)		\
 	MACRO(unshare)		\
 	MACRO(uprobe)		\
 	MACRO(urandom)		\
@@ -317,6 +319,7 @@
 	MACRO(vm_segv)		\
 	MACRO(vm_splice)	\
 	MACRO(wait)		\
+	MACRO(waitcpu)		\
 	MACRO(watchdog)		\
 	MACRO(wcs)		\
 	MACRO(x86cpuid)		\

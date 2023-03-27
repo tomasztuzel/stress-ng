@@ -375,6 +375,8 @@ static int stress_revio(const stress_args_t *args)
 				args->name, filename, errno, strerror(errno));
 			goto finish;
 		}
+		stress_file_rw_hint_short(fd);
+
 		fs_type = stress_fs_type(filename);
 		(void)shim_unlink(filename);
 		if (ftruncate(fd, (off_t)revio_bytes) < 0) {
@@ -431,7 +433,7 @@ seq_wr_retry:
 
 	if ((iterations > 0) && (avg_extents > 0.0)) {
 		avg_extents /= (double)iterations;
-		pr_inf("%s: average number of extents %.2f\n", args->name, avg_extents * args->num_instances);
+		stress_metrics_set(args, 0, "extents", (double)avg_extents);
 	}
 
 	rc = EXIT_SUCCESS;

@@ -21,6 +21,7 @@
 #include "core-arch.h"
 #include "core-builtin.h"
 #include "core-cpu.h"
+#include "core-pragma.h"
 #include "core-put.h"
 #include "core-target-clones.h"
 
@@ -310,7 +311,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_cpu_bitops(const char *name)
  *  stress_cpu_trig()
  *	simple sin, cos trig functions
  */
-static void HOT stress_cpu_trig(const char *name)
+static void HOT OPTIMIZE_FAST_MATH stress_cpu_trig(const char *name)
 {
 	int i;
 	long double d_sum = 0.0L;
@@ -353,7 +354,7 @@ static void HOT stress_cpu_trig(const char *name)
  *  stress_cpu_hyperbolic()
  *	simple hyperbolic sinh, cosh functions
  */
-static void HOT stress_cpu_hyperbolic(const char *name)
+static void HOT OPTIMIZE_FAST_MATH stress_cpu_hyperbolic(const char *name)
 {
 	int i;
 	long double d_sum = 0.0L;
@@ -403,6 +404,7 @@ static void HOT OPTIMIZE3 stress_cpu_rand(const char *name)
 	const uint32_t sum = 0xc253698c;
 
 	stress_mwc_seed();
+PRAGMA_UNROLL_N(8)
 	for (i = 0; LIKELY(i < 16384); i++)
 		i_sum += stress_mwc32();
 
@@ -429,6 +431,7 @@ static void HOT OPTIMIZE3 stress_cpu_logmap(const char *name)
 
 	(void)name;
 
+PRAGMA_UNROLL_N(8)
 	for (i = 0; i < 16384; i++) {
 		/*
 		 *  Scale up a fractional part of x
@@ -504,6 +507,7 @@ static void HOT OPTIMIZE3 stress_cpu_lfsr32(const char *name)
 
 	(void)name;
 
+PRAGMA_UNROLL_N(8)
 	for (i = 0; LIKELY(i < 16384); i++) {
 		lfsr = (lfsr >> 1) ^ (unsigned int)(-(lfsr & 1u) & 0xd0000001U);
 	}
@@ -646,7 +650,7 @@ static void HOT OPTIMIZE3 fft_partial(
  *  stress_cpu_fft()
  *	Fast Fourier Transform
  */
-static void TARGET_CLONES UNROLL stress_cpu_fft(const char *name)
+static void TARGET_CLONES stress_cpu_fft(const char *name)
 {
 	static double complex buf[FFT_SIZE], tmp[FFT_SIZE];
 	int i;
@@ -715,11 +719,18 @@ static void random_buffer(uint8_t *data, const size_t len)
 static void OPTIMIZE3 TARGET_CLONES stress_cpu_collatz(const char *name)
 {
 	register uint64_t n = 989345275647ULL;	/* Has 1348 steps in cycle */
+	register uint64_t s = stress_mwc8();
 	register int i;
 
+	/*
+	 *  We need to put in the accumulation of s to force the compiler
+	 *  to generate code that does the following computation at run time.
+	 */
 	for (i = 0; n != 1; i++) {
 		n = (n & 1) ? (3 * n) + 1 : n / 2;
+		s += n;		/* Force compiler to do iterative computations */
 	}
+	stress_uint64_put(s);
 	if ((g_opt_flags & OPT_FLAGS_VERIFY) && (i != 1348))
 		pr_fail("%s: error detected, failed collatz progression\n",
 			name);
@@ -743,6 +754,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_cpu_idct(const char *name)
 	 *  Set up DCT
 	 */
 	for (i = 0; i < IDCT_SIZE; i++) {
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < IDCT_SIZE; j++) {
 			data[i][j] = (i + j == 0) ? 2040: 0;
 		}
@@ -1186,6 +1198,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_cpu_rgb(const char *name)
 	(void)name;
 
 	/* Do a 1000 colours starting from the rgb seed */
+PRAGMA_UNROLL_N(8)
 	for (i = 0; i < 1000; i++) {
 		float y, u, v;
 
@@ -1243,6 +1256,7 @@ static void OPTIMIZE3 TARGET_CLONES stress_cpu_matrix_prod(const char *name)
 	}
 
 	for (i = 0; i < MATRIX_PROD_SIZE; i++)
+PRAGMA_UNROLL_N(8)
 		for (j = 0; j < MATRIX_PROD_SIZE; j++)
 			sum += r[i][j];
 	stress_long_double_put(sum);
@@ -1308,7 +1322,7 @@ static void OPTIMIZE3 stress_cpu_psi(const char *name)
  *   stress_cpu_ln2
  *	compute ln(2) using series
  */
-static void OPTIMIZE3 TARGET_CLONES stress_cpu_ln2(const char *name)
+static void OPTIMIZE3 TARGET_CLONES OPTIMIZE_FAST_MATH stress_cpu_ln2(const char *name)
 {
 	long double ln2 = 0.0L, last_ln2 = 0.0L;
 	long double precision = 1.0e-7L;
@@ -1367,15 +1381,22 @@ static void stress_cpu_ackermann(const char *name)
  *   stress_cpu_explog
  *	compute exp(log(n))
  */
-static void HOT stress_cpu_explog(const char *name)
+static void HOT OPTIMIZE_FAST_MATH stress_cpu_explog(const char *name)
 {
 	uint32_t i;
-	double n = 1e6;
+	double n = 1e6 + (double)stress_mwc8();
+	double m = 0.0;
 
 	(void)name;
 
-	for (i = 1; LIKELY(i < 100000); i++)
-		n = shim_exp(shim_log(n) / 1.00002);
+	for (i = 1; LIKELY(i < 100000); i++) {
+		n = shim_log(n) / 1.00002;
+		m += n;
+		n = shim_exp(n);
+		m += n;
+	}
+	stress_double_put(m);
+	stress_double_put(n);
 }
 
 /*
@@ -1530,7 +1551,7 @@ static void stress_cpu_ipv4checksum(const char *name)
  *  zeta()
  *	Riemann zeta function
  */
-static inline long double complex HOT OPTIMIZE3 zeta(
+static inline long double complex HOT OPTIMIZE3 OPTIMIZE_FAST_MATH zeta(
 	const long double complex s,
 	long double precision)
 {
@@ -1571,7 +1592,7 @@ static void stress_cpu_zeta(const char *name)
  * stress_cpu_gamma()
  *	stress Euler-Mascheroni constant gamma
  */
-static void HOT OPTIMIZE3 stress_cpu_gamma(const char *name)
+static void HOT OPTIMIZE3 OPTIMIZE_FAST_MATH stress_cpu_gamma(const char *name)
 {
 	long double precision = 1.0e-10L;
 	long double sum = 0.0L, k = 1.0L, _gamma = 0.0L, gammaold;
@@ -1652,6 +1673,7 @@ static void HOT OPTIMIZE3 stress_cpu_sieve(const char *name)
 				STRESS_CLRBIT(sieve, j);
 
 	/* And count up number of primes */
+PRAGMA_UNROLL_N(8)
 	for (j = 0, i = 2; i < SIEVE_SIZE; i++) {
 		if (STRESS_GETBIT(sieve, i))
 			j++;
@@ -1782,7 +1804,7 @@ static void stress_cpu_hanoi(const char *name)
  *  stress_floatconversion
  *	exercise conversion to/from different floating point values
  */
-static void TARGET_CLONES stress_cpu_floatconversion(const char *name)
+static void TARGET_CLONES OPTIMIZE_FAST_MATH stress_cpu_floatconversion(const char *name)
 {
 	float f_sum = 0.0;
 	double d_sum = 0.0;
@@ -2000,9 +2022,9 @@ static void HOT OPTIMIZE3 stress_cpu_pi(const char *name)
  *	compute the constant omega
  *	See http://en.wikipedia.org/wiki/Omega_constant
  */
-static void HOT OPTIMIZE3 stress_cpu_omega(const char *name)
+static void HOT OPTIMIZE3 OPTIMIZE_FAST_MATH stress_cpu_omega(const char *name)
 {
-	long double omega = 0.5L, last_omega = 0.0L;
+	long double omega = 0.5 + ((double)stress_mwc16() * 1.0E-9), last_omega = 0.0L;
 	const long double precision = 1.0e-20L;
 	const int max_iter = 6;
 	int n = 0;
@@ -2290,6 +2312,7 @@ static void TARGET_CLONES stress_cpu_dither(const char *name)
 	 *  Generate some random 8 bit image
 	 */
 	for (y = 0; y < STRESS_CPU_DITHER_Y; y += 8) {
+PRAGMA_UNROLL_N(8)
 		for (x = 0; x < STRESS_CPU_DITHER_X; x ++) {
 			uint64_t v = stress_mwc64();
 
@@ -2356,6 +2379,7 @@ static void TARGET_CLONES stress_cpu_div8(const char *name)
 	while (i > 0) {
 		const uint8_t n = (uint8_t)STRESS_MINIMUM(i, 224);
 		register uint8_t k, l;
+
 		for (l = 0, k = 1; l < n; l++, k += delta) {
 			register uint8_t r = (uint8_t)(j / k);
 			sum += r;
@@ -2603,7 +2627,7 @@ static void stress_cpu_queens(const char *name)
  *	find factorials from 1..150 using
  *	Stirling's and Ramanujan's Approximations.
  */
-static void stress_cpu_factorial(const char *name)
+static void OPTIMIZE_FAST_MATH stress_cpu_factorial(const char *name)
 {
 	int n;
 	long double f = 1.0L;

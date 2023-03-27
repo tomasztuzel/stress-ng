@@ -21,9 +21,10 @@
 #include "git-commit-id.h"
 #include "core-builtin.h"
 #include "core-capabilities.h"
-#include "core-cache.h"
+#include "core-cpu-cache.h"
 #include "core-hash.h"
 #include "core-pragma.h"
+#include "core-sort.h"
 
 #if defined(HAVE_LINUX_FIEMAP_H)
 #include <linux/fiemap.h>
@@ -737,6 +738,8 @@ static int stress_get_meminfo(
 		size_t page_size = stress_get_page_size();
 		int ret;
 
+		/* zero vm_stat, keep cppcheck silent */
+		(void)memset(&vm_stat, 0, sizeof(vm_stat));
 		ret = host_statistics64(host, HOST_VM_INFO64, (host_info64_t)&vm_stat, &count);
 		if (ret >= 0) {
 			*freemem = page_size * vm_stat.free_count;
@@ -786,6 +789,29 @@ void stress_get_memlimits(
 	(void)fclose(fp);
 }
 
+#define PR_SET_MEMORY_MERGE 67
+
+/*
+ *  stress_ksm_memory_merge()
+ *	set kernel samepage merging flag (linux only)
+ */
+void stress_ksm_memory_merge(const int flag)
+{
+#if defined(__linux__) &&	\
+    defined(PR_SET_MEMORY_MERGE)
+	static int prev_flag = -1;
+
+	if ((flag >= 0) && (flag <= 1)) {
+		if (flag != prev_flag){
+			VOID_RET(int, prctl(PR_SET_MEMORY_MERGE, flag));
+			prev_flag = flag;
+		}
+	}
+#else
+	(void)flag;
+#endif
+}
+
 /*
  *  stress_low_memory()
  *	return true if running low on memory
@@ -795,9 +821,23 @@ bool stress_low_memory(const size_t requested)
 	static size_t prev_freemem = 0;
 	static size_t prev_freeswap = 0;
 	size_t freemem, totalmem, freeswap, totalswap;
+	static double threshold = -1.0;
 	bool low_memory = false;
 
 	if (stress_get_meminfo(&freemem, &totalmem, &freeswap, &totalswap) == 0) {
+		/*
+		 *  Threshold not set, then get
+		 */
+		if (threshold < 0.0) {
+			size_t bytes = 0;
+
+			if (stress_get_setting("oom-avoid-bytes", &bytes)) {
+				threshold = 100.0 * (double)bytes / (double)freemem;
+			} else {
+				/* Not specified, then default to 2.5% */
+				threshold = 2.5;
+			}
+		}
 		/*
 		 *  Stats from previous call valid, then check for memory
 		 *  changes
@@ -820,12 +860,12 @@ bool stress_low_memory(const size_t requested)
 			}
 		}
 		/* Not enough for allocation and slop? */
-		if (freemem < ((2 * MB) + requested)) {
+		if (freemem < ((4 * MB) + requested)) {
 			low_memory = true;
 			goto update;
 		}
-		/* Less than 1% left? */
-		if (((double)freemem * 100.0 / (double)(totalmem - requested)) < 1.0) {
+		/* Less than 3% left? */
+		if (((double)freemem * 100.0 / (double)(totalmem - requested)) < threshold) {
 			low_memory = true;
 			goto update;
 		}
@@ -837,6 +877,10 @@ bool stress_low_memory(const size_t requested)
 update:
 		prev_freemem = freemem;
 		prev_freeswap = freeswap;
+
+		/* low memory? automatically enable ksm memory merging */
+		if (low_memory)
+			stress_ksm_memory_merge(1);
 	}
 	return low_memory;
 }
@@ -1549,7 +1593,7 @@ void stress_rndstr(char *str, size_t len)
 	 * Be careful if expanding this alphabet, some of this function's users
 	 * use it to generate random filenames.
 	 */
-	static const char alphabet[64] = 
+	static const char alphabet[64] =
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		"abcdefghijklmnopqrstuvwxyz"
 		"0123456789" "-_";
@@ -1581,8 +1625,9 @@ void stress_rndstr(char *str, size_t len)
 void stress_rndbuf(void *buf, size_t len)
 {
 	size_t i;
+
 	for (i = 0; i < len; i++)
-		*(char *)buf = stress_mwc8();
+		*(char *)buf++ = stress_mwc8();
 }
 
 /*
@@ -1756,11 +1801,11 @@ void pr_yaml_runinfo(FILE *yaml)
  */
 int stress_cache_alloc(const char *name)
 {
-	stress_cpus_t *cpu_caches;
+	stress_cpu_cache_cpus_t *cpu_caches;
 	stress_cpu_cache_t *cache = NULL;
 	uint16_t max_cache_level = 0;
 
-	cpu_caches = stress_get_all_cpu_cache_details();
+	cpu_caches = stress_cpu_cache_get_all_details();
 	if (!cpu_caches) {
 		if (stress_warn_once())
 			pr_dbg("%s: using defaults, cannot determine cache details\n", name);
@@ -1768,7 +1813,7 @@ int stress_cache_alloc(const char *name)
 		goto init_done;
 	}
 
-	max_cache_level = stress_get_max_cache_level(cpu_caches);
+	max_cache_level = stress_cpu_cache_get_max_level(cpu_caches);
 	if (max_cache_level == 0) {
 		if (stress_warn_once())
 			pr_dbg("%s: using defaults, cannot determine cache level details\n", name);
@@ -1782,7 +1827,7 @@ int stress_cache_alloc(const char *name)
 		g_shared->mem_cache_level = max_cache_level;
 	}
 
-	cache = stress_get_cpu_cache(cpu_caches, g_shared->mem_cache_level);
+	cache = stress_cpu_cache_get(cpu_caches, g_shared->mem_cache_level);
 	if (!cache) {
 		if (stress_warn_once())
 			pr_dbg("%s: using built-in defaults as no suitable "
@@ -1873,7 +1918,7 @@ ssize_t system_write(
 	ssize_t ret;
 
 	fd = open(path, O_WRONLY);
-	if (fd < 0)
+	if (UNLIKELY(fd < 0))
 		return -errno;
 	ret = write(fd, buf, buf_len);
 	if (ret < (ssize_t)buf_len)
@@ -1898,10 +1943,10 @@ ssize_t system_read(
 	(void)memset(buf, 0, buf_len);
 
 	fd = open(path, O_RDONLY);
-	if (fd < 0)
+	if (UNLIKELY(fd < 0))
 		return -errno;
 	ret = read(fd, buf, buf_len);
-	if (ret < 0) {
+	if (UNLIKELY(ret < 0)) {
 		buf[0] = '\0';
 		ret = -errno;
 	}
@@ -1937,14 +1982,14 @@ bool stress_is_prime64(const uint64_t n)
 }
 
 /*
- *  stress_get_prime64()
+ *  stress_get_next_prime64()
  *	find a prime that is not a multiple of n,
  *	used for file name striding. Minimum is 1009,
  *	max is unbounded. Return a prime > n, each
  *	call will return the next prime to keep the
  *	primes different each call.
  */
-uint64_t stress_get_prime64(const uint64_t n)
+uint64_t stress_get_next_prime64(const uint64_t n)
 {
 	static uint64_t p = 1009;
 	const uint64_t odd_n = (n & 0x0ffffffffffffffeUL) + 1;
@@ -1963,6 +2008,32 @@ uint64_t stress_get_prime64(const uint64_t n)
 	/* Give up */
 	p = 1009;
 	return p;
+}
+
+/*
+ *  stress_get_prime64()
+ *	find a prime that is not a multiple of n,
+ *	used for file name striding. Minimum is 1009,
+ *	max is unbounded. Return a prime > n.
+ */
+uint64_t stress_get_prime64(const uint64_t n)
+{
+	uint64_t p = 1009;
+	const uint64_t odd_n = (n & 0x0ffffffffffffffeUL) + 1;
+	int i;
+
+	if (p < odd_n)
+		p = odd_n;
+
+	/* Search for next prime.. */
+	for (i = 0; keep_stressing_flag() && (i < 2000); i++) {
+		p += 2;
+
+		if ((n % p) && stress_is_prime64(p))
+			return p;
+	}
+	/* Give up */
+	return 18446744073709551557ULL;	/* Max 64 bit prime */
 }
 
 /*
@@ -2308,6 +2379,10 @@ const char *stress_get_compiler(void)
       defined(__INTEL_COMPILER) &&	\
       defined(__INTEL_COMPILER_UPDATE)
 	static const char cc[] = "icc " XSTRINGIFY(__INTEL_COMPILER) "." XSTRINGIFY(__INTEL_COMPILER_UPDATE) "";
+#elif defined(__INTEL_CLANG_COMPILER)
+	static const char cc[] = "icx " XSTRINGIFY(__INTEL_CLANG_COMPILER) "";
+#elif defined(__INTEL_LLVM_COMPILER)
+	static const char cc[] = "icx " XSTRINGIFY(__INTEL_LLVM_COMPILER) "";
 #elif defined(__TINYC__)
 	static const char cc[] = "tcc " XSTRINGIFY(__TINYC__) "";
 #elif defined(__PCC__) &&			\
@@ -2449,7 +2524,7 @@ size_t stress_probe_max_pipe_size(void)
 	 */
 	ret = system_read("/proc/sys/fs/pipe-max-size", buf, sizeof(buf));
 	if (ret > 0) {
-		if (sscanf(buf, "%zd", &sz) == 1)
+		if (sscanf(buf, "%zu", &sz) == 1)
 			if (!stress_check_max_pipe_size(sz, page_size))
 				goto ret;
 	}
@@ -2645,9 +2720,12 @@ int stress_drop_capabilities(const char *name)
     defined(PR_SET_NO_NEW_PRIVS)
 	ret = prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0);
 	if (ret < 0) {
-		pr_inf("%s: prctl PR_SET_NO_NEW_PRIVS on pid %d failed: "
-			"errno=%d (%s)\n",
-			name, uch.pid, errno, strerror(errno));
+		/* Older kernels that don't support this prctl throw EINVAL */
+		if (errno != EINVAL) {
+			pr_inf("%s: prctl PR_SET_NO_NEW_PRIVS on pid %d failed: "
+				"errno=%d (%s)\n",
+				name, uch.pid, errno, strerror(errno));
+		}
 		return -1;
 	}
 #endif
@@ -3270,7 +3348,8 @@ void NORETURN MLOCKED_TEXT stress_sig_handler_exit(int signum)
  *  __stack_chk_fail()
  *	override stack smashing callback
  */
-#if (defined(__GNUC__) || defined(__clang__)) &&	\
+#if defined(__GNUC__) &&	\
+    !defined(__clang__) &&	\
     defined(HAVE_WEAK_ATTRIBUTE)
 extern void __stack_chk_fail(void);
 
@@ -3626,3 +3705,68 @@ int stress_bsd_getsysctl_int(const char *name)
 	return 0;
 }
 #endif
+
+/*
+ *  stress_close_fds()
+ *	close an array of file descriptors
+ */
+void stress_close_fds(int *fds, const size_t n)
+{
+	size_t i, j;
+
+	if (n < 1)
+		return;
+
+	qsort(fds, n, sizeof(*fds), stress_sort_cmp_fwd_int);
+	for (j = 0; j < n - 1; j++) {
+		if (fds[j] >= 0)
+			break;
+	}
+	for (i = j; i < n - 1; i++) {
+		if (fds[i] + 1 != fds[i + 1])
+			goto close_slow;
+	}
+	if (shim_close_range(fds[j], fds[n - 1], 0) == 0)
+		return;
+
+close_slow:
+	for (i = j; i < n; i++)
+		(void)close(fds[i]);
+}
+
+/*
+ *  stress_file_rw_hint_short()
+ *	hint that file data opened on fd hash short lifetime
+ */
+void stress_file_rw_hint_short(const int fd)
+{
+#if defined(F_SET_FILE_RW_HINT) &&	\
+    defined(RWH_WRITE_LIFE_SHORT)
+	uint64_t hint = RWH_WRITE_LIFE_SHORT;
+
+	VOID_RET(int, fcntl(fd, F_SET_FILE_RW_HINT, &hint));
+#else
+	(void)fd;
+#endif
+}
+
+/*
+ *  stress_set_vma_anon_name()
+ *	set a name to an anonymously mapped vma
+ */
+void stress_set_vma_anon_name(const void *addr, const size_t size, const char *name)
+{
+#if defined(HAVE_SYS_PRCTL_H) &&	\
+    defined(HAVE_PRCTL) &&		\
+    defined(PR_SET_VMA) &&		\
+    defined(PR_SET_VMA_ANON_NAME)
+	VOID_RET(int, prctl(PR_SET_VMA, PR_SET_VMA_ANON_NAME,
+			(unsigned long)addr,
+			(unsigned long)size,
+			(unsigned long)name));
+#else
+	(void)addr;
+	(void)size;
+	(void)name;
+#endif
+}

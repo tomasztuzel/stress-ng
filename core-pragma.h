@@ -19,13 +19,15 @@
 #ifndef CORE_PRAGMA_H
 #define CORE_PRAGMA_H
 
+#define STRESS_PRAGMA_(x) _Pragma (#x)
+#define STRESS_PRAGMA(x) STRESS_PRAGMA_(x)
+
 #if defined(__clang__) &&	\
     NEED_CLANG(4, 0, 0) &&	\
     defined(HAVE_PRAGMA)
 #define STRESS_PRAGMA_PUSH		_Pragma("GCC diagnostic push")
 #define STRESS_PRAGMA_POP		_Pragma("GCC diagnostic pop")
 #define STRESS_PRAGMA_WARN_OFF		_Pragma("GCC diagnostic ignored \"-Weverything\"")
-#define STRESS_PRAGMA_WARN_CPP_OFF	_Pragma("GCC diagnostic ignored \"-Wcpp\"")
 #elif defined(__GNUC__) &&	\
       defined(HAVE_PRAGMA) &&	\
       NEED_GNUC(4, 6, 0)
@@ -36,12 +38,40 @@
 					_Pragma("GCC diagnostic ignored \"-Wdeprecated-declarations\"") \
 					_Pragma("GCC diagnostic ignored \"-Wcast-qual\"") \
 					_Pragma("GCC diagnostic ignored \"-Wnonnull\"")
-#define STRESS_PRAGMA_WARN_CPP_OFF	_Pragma("GCC diagnostic ignored \"-Wcpp\"")
 #else
 #define STRESS_PRAGMA_PUSH
 #define STRESS_PRAGMA_POP
 #define STRESS_PRAGMA_WARN_OFF
+#endif
+
+#if defined(__clang__) &&	\
+    NEED_CLANG(8, 0, 0) &&	\
+    defined(HAVE_PRAGMA)
+#define STRESS_PRAGMA_WARN_CPP_OFF	_Pragma("GCC diagnostic ignored \"-Wcpp\"")
+#elif defined(__GNUC__) &&	\
+      defined(HAVE_PRAGMA) &&	\
+      NEED_GNUC(10, 0, 0)
+#define STRESS_PRAGMA_WARN_CPP_OFF	_Pragma("GCC diagnostic ignored \"-Wcpp\"")
+#else
 #define STRESS_PRAGMA_WARN_CPP_OFF
+#endif
+
+#if defined(__ICC) &&			\
+    defined(__INTEL_COMPILER) &&	\
+    defined(__INTEL_COMPILER_UPDATE)
+#define PRAGMA_UNROLL_N(n)	STRESS_PRAGMA(unroll)
+#define PRAGMA_UNROLL		STRESS_PRAGMA(unroll)
+#elif defined(__clang__) &&       \
+    NEED_CLANG(9, 0, 0)
+#define PRAGMA_UNROLL_N(n)	STRESS_PRAGMA(unroll n)
+#define PRAGMA_UNROLL		STRESS_PRAGMA(unroll)
+#elif defined(__GNUC__) &&      \
+    NEED_GNUC(10, 0, 0)
+#define PRAGMA_UNROLL_N(n)	STRESS_PRAGMA(GCC unroll n)
+#define PRAGMA_UNROLL		STRESS_PRAGMA(GCC unroll 8)
+#else
+#define PRAGMA_UNROLL_N(n)
+#define PRAGMA_UNROLL
 #endif
 
 #endif

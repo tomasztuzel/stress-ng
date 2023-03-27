@@ -703,12 +703,12 @@ static void stress_iomix_inode_ioctl(
 	const int flag,
 	bool *ok)
 {
+#if defined(FS_IOC_GETFLAGS)
 	int ret, attr;
 
 	if (!keep_stressing(args))
 		return;
 
-#if defined(FS_IOC_GETFLAGS)
 	ret = ioctl(fd, FS_IOC_GETFLAGS, &attr);
 	if (ret < 0)
 		return;
@@ -1016,6 +1016,8 @@ static int stress_iomix(const stress_args_t *args)
 		}
 		goto tidy;
 	}
+
+	stress_file_rw_hint_short(fd);
 
 	(void)memset(pids, 0, sizeof(pids));
 

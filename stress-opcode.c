@@ -19,6 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-arch.h"
+#include "core-bitops.h"
 
 #if defined(HAVE_LINUX_AUDIT_H)
 #include <linux/audit.h>
@@ -88,13 +89,7 @@ typedef struct  {
 	volatile uint64_t sig_count[MAX_SIGS];
 } stress_opcode_state_t;
 
-/*
- *  This needs to be volatile to force non-register usage
- *  of state and hence to try to avoid clobbering by
- *  an invalid opcode. Same applies for all the elements
- *  in the structure.
- */
-static volatile stress_opcode_state_t *state;
+static stress_opcode_state_t *state;
 
 static const int sigs[] = {
 #if defined(SIGILL)
@@ -160,9 +155,11 @@ static struct sock_fprog prog = {
 static void MLOCKED_TEXT stress_badhandler(int signum)
 {
 	if ((signum >= 0) && (signum < MAX_SIGS)) {
-		(void)mprotect((void *)state, sizeof(*state), PROT_READ | PROT_WRITE);
-		state->sig_count[signum]++;
-		(void)mprotect((void *)state, sizeof(*state), PROT_READ);
+		volatile stress_opcode_state_t *vstate = (volatile stress_opcode_state_t *)state;
+
+		(void)mprotect(state, sizeof(*state), PROT_READ | PROT_WRITE);
+		vstate->sig_count[signum]++;
+		(void)mprotect(state, sizeof(*state), PROT_READ);
 	}
 
 #if defined(STRESS_OPCODE_USE_SIGLONGJMP)
@@ -188,17 +185,6 @@ static void MLOCKED_TEXT stress_badhandler(int signum)
 #endif
 }
 
-static inline ALWAYS_INLINE uint64_t OPTIMIZE3 reverse64(register uint64_t x)
-{
-	x = ((x & 0xf0f0f0f0f0f0f0f0ULL) >> 4) |
-	    ((x & 0x0f0f0f0f0f0f0f0fULL) << 4);
-	x = ((x & 0xccccccccccccccccULL) >> 2) |
-	    ((x & 0x3333333333333333ULL) << 2);
-	x = ((x & 0xaaaaaaaaaaaaaaaaULL) >> 1) |
-	    ((x & 0x5555555555555555ULL) << 1);
-	return x;
-}
-
 static void OPTIMIZE3 stress_opcode_random(
 	size_t page_size,
 	void *ops_begin,
@@ -210,7 +196,7 @@ static void OPTIMIZE3 stress_opcode_random(
 	(void)op;
 	(void)page_size;
 
-	while (ops < (uint32_t *)ops_end)
+	while (ops < (const uint32_t *)ops_end)
 		*(ops++) = stress_mwc32();
 }
 
@@ -274,7 +260,7 @@ static void OPTIMIZE3 stress_opcode_inc(
 				*(ops++) = (tmp64 >> 40);
 			}
 			/* There is some slop at the end */
-			while (ops < (uint8_t *)ops_end)
+			while (ops < (const uint8_t *)ops_end)
 				*ops++ = 0x00;
 		}
 		break;
@@ -300,18 +286,18 @@ static void OPTIMIZE3 stress_opcode_mixed(
 	register uint64_t *ops = (uint64_t *)ops_begin;
 
 	(void)page_size;
-	while (ops < (uint64_t *)ops_end) {
+	while (ops < (const uint64_t *)ops_end) {
 		register const uint64_t rnd = stress_mwc64();
 
 		*(ops++) = tmp;
 		*(ops++) = tmp ^ 0xffffffff;	/* Inverted */
 		*(ops++) = ((tmp >> 1) ^ tmp);	/* Gray */
-		*(ops++) = reverse64(tmp);
+		*(ops++) = stress_reverse64(tmp);
 
 		*(ops++) = rnd;
 		*(ops++) = rnd ^ 0xffffffff;
 		*(ops++) = ((rnd >> 1) ^ rnd);
-		*(ops++) = reverse64(rnd);
+		*(ops++) = stress_reverse64(rnd);
 	}
 }
 
@@ -393,15 +379,25 @@ static int stress_opcode(const stress_args_t *args)
 	const double num_opcodes = pow(2.0, STRESS_OPCODE_SIZE);
 	uint64_t forks = 0;
 	void *opcodes;
+	/*
+	 *  vstate is a volatile alias to state to force non-register
+	 *  usage of state and hence to try to avoid clobbering by
+	 *  an invalid opcode. Same applies for all the elements
+	 *  in the structure.
+	 */
+	volatile stress_opcode_state_t *vstate;
 
-	state = (stress_opcode_state_t *)mmap(NULL, sizeof(*state), PROT_READ | PROT_WRITE,
-						MAP_ANONYMOUS | MAP_SHARED, -1, 0);
+	state = (stress_opcode_state_t *)
+		mmap(NULL, sizeof(*state), PROT_READ | PROT_WRITE,
+			MAP_ANONYMOUS | MAP_SHARED, -1, 0);
 	if (state == MAP_FAILED) {
 		pr_inf_skip("%s: mmap of %zu bytes failed, errno=%d (%s) "
 			"skipping stressor\n",
 			args->name, args->page_size, errno, strerror(errno));
 		return EXIT_NO_RESOURCE;
 	}
+	vstate = (volatile stress_opcode_state_t *)state;
+
 	opcodes = (void *)mmap(NULL, page_size * PAGES, PROT_READ | PROT_WRITE,
 				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (opcodes == MAP_FAILED) {
@@ -418,7 +414,7 @@ static int stress_opcode(const stress_args_t *args)
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	op_start = (num_opcodes * (double)args->instance) / args->num_instances;
-	state->opcode = (uint64_t)op_start;
+	vstate->opcode = (uint64_t)op_start;
 
 	t = stress_time_now();
 	do {
@@ -433,7 +429,7 @@ static int stress_opcode(const stress_args_t *args)
 			char buf[32];
 
 			(void)snprintf(buf, sizeof(buf), "opcode-0x%*.*" PRIx64 " [run]",
-				OPCODE_HEX_DIGITS, OPCODE_HEX_DIGITS, state->opcode);
+				OPCODE_HEX_DIGITS, OPCODE_HEX_DIGITS, vstate->opcode);
 			stress_set_proc_name(buf);
 		}
 again:
@@ -452,7 +448,7 @@ again:
 			struct itimerval it;
 			void *ops_begin = (uint8_t *)((uintptr_t)opcodes + page_size);
 			void *ops_end = (uint8_t *)((uintptr_t)opcodes + (page_size * (PAGES - 1)));
-			void *ops_ptr;
+			NOCLOBBER void *ops_ptr;
 
 			(void)sched_settings_apply(true);
 
@@ -476,7 +472,7 @@ again:
 			(void)mprotect((void *)ops_begin, page_size, PROT_WRITE);
 
 			/* Populate with opcodes */
-			opcode_method->func(page_size, ops_begin, ops_end, &state->opcode);
+			opcode_method->func(page_size, ops_begin, ops_end, &vstate->opcode);
 
 			/* Make read-only executable and force I$ flush */
 			(void)mprotect((void *)ops_begin, page_size, PROT_READ | PROT_EXEC);
@@ -534,8 +530,8 @@ again:
 exercise:
 #endif
 			for (i = 0, ops_ptr = ops_begin; i < opcode_loops; i++) {
-				state->opcode = (state->opcode + 1) & STRESS_OPCODE_MASK;
-				state->ops_attempted++;
+				vstate->opcode = (vstate->opcode + 1) & STRESS_OPCODE_MASK;
+				vstate->ops_attempted++;
 				(void)mprotect((void *)state, sizeof(*state), PROT_READ);
 
 				((void (*)(void))(ops_ptr))();
@@ -543,10 +539,10 @@ exercise:
 				(void)mprotect((void *)state, sizeof(*state), PROT_READ | PROT_WRITE);
 				ops_ptr = (void *)((uintptr_t)ops_ptr + opcode_bytes);
 				/* Check if got stuck */
-				if (state->opcode_prev == state->opcode)
+				if (vstate->opcode_prev == vstate->opcode)
 					break;
-				state->opcode_prev = state->opcode;
-				state->ops_ok++;
+				vstate->opcode_prev = vstate->opcode;
+				vstate->ops_ok++;
 			}
 			_exit(0);
 		}
@@ -571,19 +567,39 @@ finish:
 	duration = stress_time_now() - t;
 	rc = EXIT_SUCCESS;
 
-	rate = (duration > 0.0) ? (double)state->ops_attempted / duration : 0.0;
+	if ((duration > 0.0) &&
+	    (vstate->ops_attempted > 0.0) &&
+	    (args->instance == 0) &&
+	    (args->num_instances > 0)) {
+		const double secs_in_tropical_year = 365.2422 * 24.0 * 60.0 * 60.0;
+		double estimated_duration = (duration * num_opcodes / vstate->ops_attempted) / args->num_instances;
+
+		if (estimated_duration > secs_in_tropical_year * 5) {
+			estimated_duration = round(estimated_duration / secs_in_tropical_year);
+			pr_dbg("%s estimated time to cover all op-codes: %.0f years\n",
+				args->name, estimated_duration);
+		} else if (estimated_duration < 1.0) {
+			pr_dbg("%s estimated time to cover all op-codes: %.4f seconds\n",
+				args->name, estimated_duration);
+		} else {
+			pr_dbg("%s: estimated time to cover all op-codes: %s\n",
+				args->name, stress_duration_to_str(estimated_duration));
+		}
+	}
+
+	rate = (duration > 0.0) ? (double)vstate->ops_attempted / duration : 0.0;
 	stress_metrics_set(args, 0, "opcodes exercised per sec", rate);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->ops_ok / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->ops_ok / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 1, "% opcodes successfully executed", percent);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->sig_count[SIGILL] / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->sig_count[SIGILL] / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 2, "% illegal opcodes executed", percent);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->sig_count[SIGBUS] / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->sig_count[SIGBUS] / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 3, "% opcodes generated SIGBUS", percent);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->sig_count[SIGSEGV] / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->sig_count[SIGSEGV] / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 4, "% opcodes generated SIGSEGV", percent);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->sig_count[SIGFPE] / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->sig_count[SIGFPE] / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 5, "% opcodes generated SIGFPE", percent);
-	percent = (state->ops_attempted > 0.0) ? 100.0 * (double)state->sig_count[SIGTRAP] / (double)state->ops_attempted : 0.0;
+	percent = (vstate->ops_attempted > 0.0) ? 100.0 * (double)vstate->sig_count[SIGTRAP] / (double)vstate->ops_attempted : 0.0;
 	stress_metrics_set(args, 6, "% opcodes generated SIGTRAP", percent);
 	rate = (duration > 0.0) ? (double)forks / duration : 0.0;
 	stress_metrics_set(args, 7, "forks per sec", rate);

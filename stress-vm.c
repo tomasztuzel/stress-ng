@@ -19,7 +19,7 @@
  */
 #include "stress-ng.h"
 #include "core-builtin.h"
-#include "core-cache.h"
+#include "core-cpu-cache.h"
 #include "core-target-clones.h"
 #include "core-nt-load.h"
 #include "core-nt-store.h"
@@ -32,9 +32,6 @@
 #define MIN_VM_HANG		(0)
 #define MAX_VM_HANG		(3600)
 #define DEFAULT_VM_HANG		(~0ULL)
-
-/* Large prime to stride around large VM regions */
-#define PRIME_64		(0x8f0000000017116dULL)
 
 /* For testing, set this to 1 to simulate random memory errors */
 #define INJECT_BIT_ERRORS	(0)
@@ -272,6 +269,17 @@ static inline void inject_random_bit_errors(uint8_t *buf, const size_t sz)
 }
 #endif
 
+/*
+ *  compute a % b where b is normally just larger than b, so we
+ *  need to do a - b once and occassionally just twice. Use repeated
+ *  subtraction since this is faster than %
+ */
+static inline OPTIMIZE3 uint64_t stress_vm_mod(register uint64_t a, register const size_t b)
+{
+	while (LIKELY(a >= b))
+		a -= b;
+	return a;
+}
 
 /*
  *  stress_vm_check()
@@ -856,7 +864,7 @@ static size_t TARGET_CLONES stress_vm_prime_incdec(
 	static uint8_t val = 0;
 	volatile uint8_t *ptr = buf;
 	size_t bit_errors = 0, i;
-	const uint64_t prime = PRIME_64;
+	const uint64_t prime = stress_get_prime64(sz + 4096);
 	uint64_t j, c = get_counter(args);
 
 #if SIZE_MAX > UINT32_MAX
@@ -881,7 +889,8 @@ static size_t TARGET_CLONES stress_vm_prime_incdec(
 	 *  memory and cache stalls
 	 */
 	for (i = 0, j = prime; i < sz; i++, j += prime) {
-		ptr[j % sz] -= val;
+		j = stress_vm_mod(j, sz);
+		ptr[j] -= val;
 		c++;
 		if (UNLIKELY(max_ops && (c >= max_ops)))
 			return 0;
@@ -1607,7 +1616,7 @@ static size_t TARGET_CLONES stress_vm_prime_zero(
 	volatile uint8_t *ptr = buf;
 	uint8_t j, *ptr8;
 	size_t bit_errors = 0;
-	const uint64_t prime = PRIME_64;
+	const uint64_t prime = stress_get_prime64(sz + 4096);
 	uint64_t k, c = get_counter(args);
 
 	(void)buf_end;
@@ -1616,7 +1625,6 @@ static size_t TARGET_CLONES stress_vm_prime_zero(
 	if (sz > (1ULL << 63))
 		return 0;
 #endif
-
 	(void)memset(buf, 0xff, sz);
 
 	for (j = 0; j < 8; j++) {
@@ -1628,7 +1636,8 @@ static size_t TARGET_CLONES stress_vm_prime_zero(
 		 *  memory and cache stalls
 		 */
 		for (i = 0, k = prime; i < sz; i++, k += prime) {
-			ptr[k % sz] &= mask;
+			k = stress_vm_mod(k, sz);
+			ptr[k] &= mask;
 			c++;
 			if (UNLIKELY(max_ops && (c >= max_ops)))
 				goto abort;
@@ -1668,7 +1677,7 @@ static size_t TARGET_CLONES stress_vm_prime_one(
 	volatile uint8_t *ptr = buf;
 	uint8_t j, *ptr8;
 	size_t bit_errors = 0;
-	const uint64_t prime = PRIME_64;
+	const uint64_t prime = stress_get_prime64(sz + 4096);
 	uint64_t k, c = get_counter(args);
 
 	(void)buf_end;
@@ -1689,7 +1698,8 @@ static size_t TARGET_CLONES stress_vm_prime_one(
 		 *  memory and cache stalls
 		 */
 		for (i = 0, k = prime; i < sz; i++, k += prime) {
-			ptr[k % sz] |= mask;
+			k = stress_vm_mod(k, sz);
+			ptr[k] |= mask;
 			c++;
 			if (UNLIKELY(max_ops && (c >= max_ops)))
 				goto abort;
@@ -1730,7 +1740,7 @@ static size_t TARGET_CLONES stress_vm_prime_gray_zero(
 	volatile uint8_t *ptr = buf;
 	uint8_t *ptr8;
 	size_t bit_errors = 0;
-	const uint64_t prime = PRIME_64;
+	const uint64_t prime = stress_get_prime64(sz + 4096);
 	uint64_t j, c = get_counter(args);
 
 	(void)buf_end;
@@ -1748,7 +1758,8 @@ static size_t TARGET_CLONES stress_vm_prime_gray_zero(
 		 *  in a totally sub-optimal way to exercise
 		 *  memory and cache stalls
 		 */
-		ptr[j % sz] &= ((i >> 1) ^ i);
+		j = stress_vm_mod(j, sz);
+		ptr[j] &= ((i >> 1) ^ i);
 		if (!keep_stressing_flag())
 			goto abort;
 		c++;
@@ -1761,7 +1772,8 @@ static size_t TARGET_CLONES stress_vm_prime_gray_zero(
 		 *  in a totally sub-optimal way to exercise
 		 *  memory and cache stalls
 		 */
-		ptr[j % sz] &= ~((i >> 1) ^ i);
+		j = stress_vm_mod(j, sz);
+		ptr[j] &= ~((i >> 1) ^ i);
 		if (UNLIKELY(!keep_stressing_flag()))
 			goto abort;
 		c++;
@@ -1801,7 +1813,7 @@ static size_t TARGET_CLONES stress_vm_prime_gray_one(
 	volatile uint8_t *ptr = buf;
 	uint8_t *ptr8;
 	size_t bit_errors = 0;
-	const uint64_t prime = PRIME_64;
+	const uint64_t prime = stress_get_prime64(sz + 4096);
 	uint64_t j, c = get_counter(args);
 
 	(void)buf_end;
@@ -1819,7 +1831,8 @@ static size_t TARGET_CLONES stress_vm_prime_gray_one(
 		 *  in a totally sub-optimal way to exercise
 		 *  memory and cache stalls
 		 */
-		ptr[j % sz] |= ((i >> 1) ^ i);
+		j = stress_vm_mod(j, sz);
+		ptr[j] |= ((i >> 1) ^ i);
 		if (UNLIKELY(!keep_stressing_flag()))
 			goto abort;
 		c++;
@@ -1833,7 +1846,8 @@ static size_t TARGET_CLONES stress_vm_prime_gray_one(
 		 *  in a totally sub-optimal way to exercise
 		 *  memory and cache stalls
 		 */
-		ptr[j % sz] |= ~((i >> 1) ^ i);
+		j = stress_vm_mod(j, sz);
+		ptr[j] |= ~((i >> 1) ^ i);
 		if (UNLIKELY(!keep_stressing_flag()))
 			goto abort;
 		c++;
@@ -2981,6 +2995,7 @@ static int stress_vm_child(const stress_args_t *args, void *ctxt)
 	void *buf = NULL, *buf_end = NULL;
 	int vm_flags = 0;                      /* VM mmap flags */
 	int vm_madvise = -1;
+	int rc = EXIT_SUCCESS;
 	size_t buf_sz;
 	size_t vm_bytes = DEFAULT_VM_BYTES;
 	const size_t page_size = args->page_size;
@@ -3006,8 +3021,9 @@ static int stress_vm_child(const stress_args_t *args, void *ctxt)
 
 	do {
 		if (no_mem_retries >= NO_MEM_RETRIES_MAX) {
-			pr_err("%s: gave up trying to mmap, no available memory\n",
+			pr_inf_skip("%s: gave up trying to mmap, no available memory, skipping stressor\n",
 				args->name);
+			rc = EXIT_NO_RESOURCE;
 			break;
 		}
 		if (!vm_keep || (buf == NULL)) {
@@ -3055,7 +3071,7 @@ static int stress_vm_child(const stress_args_t *args, void *ctxt)
 	if (vm_keep && buf != NULL)
 		(void)munmap((void *)buf, buf_sz);
 
-	return EXIT_SUCCESS;
+	return rc;
 }
 
 /*
@@ -3066,15 +3082,15 @@ static int stress_vm_child(const stress_args_t *args, void *ctxt)
 static void stress_vm_get_cache_line_size(void)
 {
 #if defined(__linux__)
-        stress_cpus_t *cpu_caches;
+        stress_cpu_cache_cpus_t *cpu_caches;
         stress_cpu_cache_t *cache;
 
 	stress_vm_cache_line_size = 64;	/* Default guess */
 
-	cpu_caches = stress_get_all_cpu_cache_details();
+	cpu_caches = stress_cpu_cache_get_all_details();
 	if (!cpu_caches)
 		return;
-	cache = stress_get_cpu_cache(cpu_caches, 1);
+	cache = stress_cpu_cache_get(cpu_caches, 1);
 	if (cache && cache->line_size)
 		stress_vm_cache_line_size = (size_t)cache->line_size;
 

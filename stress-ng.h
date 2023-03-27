@@ -280,7 +280,8 @@ typedef unsigned long int __kernel_ulong_t;
 #define PR_DEBUG		 STRESS_BIT_ULL(2) 	/* Print debug */
 #define PR_FAIL			 STRESS_BIT_ULL(3) 	/* Print test failure message */
 #define PR_WARN			 STRESS_BIT_ULL(4)	/* Print warning */
-#define PR_ALL			 (PR_ERROR | PR_INFO | PR_DEBUG | PR_FAIL | PR_WARN)
+#define PR_METRICS		 STRESS_BIT_ULL(5)	/* Print metrics */
+#define PR_ALL			 (PR_ERROR | PR_INFO | PR_DEBUG | PR_FAIL | PR_WARN | PR_METRICS)
 
 /* Option bit masks */
 #define OPT_FLAGS_METRICS	 STRESS_BIT_ULL(5)	/* Dump metrics at end */
@@ -390,6 +391,12 @@ typedef enum {
 	TYPE_ID_UINTPTR_T
 } stress_type_id_t;
 
+typedef struct {
+	uint64_t	counter;	/* bogo-op counter */
+	bool		counter_ready;	/* ready flag */
+	bool	 	run_ok;		/* stressor run w/o issues */
+} stress_counter_info_t;
+
 /*
  *  Per ELISA request, we have a duplicated counter
  *  and run_ok flag in a different shared memory region
@@ -398,8 +405,7 @@ typedef enum {
  */
 typedef struct {
 	struct {
-		uint64_t counter;	/* Copy of stats counter */
-		bool     run_ok;	/* Copy of run_ok */
+		stress_counter_info_t ci; /* Copy of stats counter info ci */
 		uint8_t	 reserved[7];	/* Padding */
 	} data;
 	uint32_t	hash;		/* Hash of data */
@@ -456,17 +462,23 @@ typedef struct {
 	void *page_wo;			/* mmap'd PROT_WO page */
 } stress_mapped_t;
 
-#define STRESS_MISC_METRICS_MAX	(24)
+#define STRESS_MISC_METRICS_MAX	(28)
 
 typedef struct {
-	char *description;
-	double value;
+	void *lock;			/* optional lock */
+	double	duration;		/* time per op */
+	double	count;			/* number of ops */
+	volatile double	t_start;	/* optional start time */
 } stress_metrics_t;
+
+typedef struct {
+	char *description;		/* description of metric */
+	double value;			/* value of metric */
+} stress_metrics_data_t;
 
 /* stressor args */
 typedef struct {
-	uint64_t *counter;		/* stressor counter */
-	bool *counter_ready;		/* counter can be read */
+	stress_counter_info_t *ci;	/* counter info struct */
 	const char *name;		/* stressor name */
 	uint64_t max_ops;		/* max number of bogo ops */
 	const uint32_t instance;	/* stressor instance # */
@@ -474,7 +486,7 @@ typedef struct {
 	pid_t pid;			/* stressor pid */
 	size_t page_size;		/* page size */
 	stress_mapped_t *mapped;	/* mmap'd pages, addr of g_shared mapped */
-	stress_metrics_t *metrics;	/* misc per stressor metrics */
+	stress_metrics_data_t *metrics;	/* misc per stressor metrics */
 	const struct stressor_info *info; /* stressor info */
 } stress_args_t;
 
@@ -513,9 +525,18 @@ typedef struct stressor_info {
 
 /* gcc 7.0 and later support __attribute__((fallthrough)); */
 #if defined(HAVE_ATTRIBUTE_FALLTHROUGH)
-#define CASE_FALLTHROUGH __attribute__((fallthrough)) /* Fallthrough */
+#define CASE_FALLTHROUGH __attribute__((fallthrough))
 #else
-#define CASE_FALLTHROUGH /* Fallthrough */
+#define CASE_FALLTHROUGH
+#endif
+
+#if defined(HAVE_ATTRIBUTE_FAST_MATH) &&		\
+    defined(__GNUC__) &&				\
+    NEED_GNUC(10, 0, 0) &&				\
+    !defined(__INTEL_COMPILER)
+#define OPTIMIZE_FAST_MATH __attribute__((optimize("fast-math")))
+#else
+#define OPTIMIZE_FAST_MATH
 #endif
 
 /* no return hint */
@@ -594,14 +615,6 @@ typedef struct stressor_info {
 #define OPTIMIZE0	__attribute__((optnone))
 #else
 #define OPTIMIZE0
-#endif
-
-/* loop unroll hint */
-#if defined(HAVE_UNROLL) &&	\
-    NEED_GNUC(8, 0, 0)
-#define UNROLL 		__attribute__((optimize("unroll-loops")))
-#else
-#define UNROLL
 #endif
 
 /* warn unused attribute */
@@ -712,6 +725,8 @@ extern void pr_err_skip(const char *fmt, ...)  FORMAT(printf, 1, 2);
 extern void pr_fail(const char *fmt, ...) FORMAT(printf, 1, 2);
 extern void pr_tidy(const char *fmt, ...) FORMAT(printf, 1, 2);
 extern void pr_warn(const char *fmt, ...) FORMAT(printf, 1, 2);
+extern void pr_warn_skip(const char *fmt, ...) FORMAT(printf, 1, 2);
+extern void pr_metrics(const char *fmt, ...) FORMAT(printf, 1, 2);
 
 extern void pr_lock_init(void);
 extern void pr_lock(void);
@@ -857,7 +872,7 @@ typedef struct {
 
 /* Per stressor statistics and accounting info */
 typedef struct {
-	uint64_t counter;		/* number of bogo ops */
+	stress_counter_info_t ci;	/* counter info */
 	double start;			/* wall clock start time */
 	double finish;			/* wall clock stop time */
 	pid_t pid;			/* stressor pid */
@@ -869,7 +884,7 @@ typedef struct {
 	stress_tz_t tz;			/* thermal zones */
 #endif
 	stress_checksum_t *checksum;	/* pointer to checksum data */
-	stress_metrics_t metrics[STRESS_MISC_METRICS_MAX];
+	stress_metrics_data_t metrics[STRESS_MISC_METRICS_MAX];
 #if defined(HAVE_GETRUSAGE)
 	double rusage_utime;		/* rusage user time */
 	double rusage_stime;		/* rusage system time */
@@ -877,8 +892,6 @@ typedef struct {
 #else
 	struct tms tms;			/* run time stats of process */
 #endif
-	bool counter_ready;		/* counter can be read */
-	bool run_ok;			/* true if stressor exited OK */
 	uint8_t padding[6];		/* padding */
 } stress_stats_t;
 
@@ -1435,10 +1448,11 @@ typedef enum {
 	OPT_kvm_ops,
 
 	OPT_l1cache,
-	OPT_l1cache_ops,
 	OPT_l1cache_line_size,
-	OPT_l1cache_size,
+	OPT_l1cache_method,
+	OPT_l1cache_ops,
 	OPT_l1cache_sets,
+	OPT_l1cache_size,
 	OPT_l1cache_ways,
 
 	OPT_landlock,
@@ -1540,10 +1554,11 @@ typedef enum {
 	OPT_memhotplug_ops,
 
 	OPT_memrate,
+	OPT_memrate_bytes,
+	OPT_memrate_flush,
 	OPT_memrate_ops,
 	OPT_memrate_rd_mbs,
 	OPT_memrate_wr_mbs,
-	OPT_memrate_bytes,
 
 	OPT_memthrash,
 	OPT_memthrash_ops,
@@ -1601,6 +1616,13 @@ typedef enum {
 	OPT_mmapmany,
 	OPT_mmapmany_ops,
 
+	OPT_module,
+	OPT_module_name,
+	OPT_module_no_modver,
+	OPT_module_no_vermag,
+	OPT_module_no_unload,
+	OPT_module_ops,
+
 	OPT_mprotect,
 	OPT_mprotect_ops,
 
@@ -1614,6 +1636,7 @@ typedef enum {
 	OPT_mremap_mlock,
 
 	OPT_msg,
+	OPT_msg_bytes,
 	OPT_msg_ops,
 	OPT_msg_types,
 
@@ -1664,6 +1687,7 @@ typedef enum {
 
 	OPT_oomable,
 	OPT_oom_avoid,
+	OPT_oom_avoid_bytes,
 
 	OPT_oom_pipe,
 	OPT_oom_pipe_ops,
@@ -1726,8 +1750,9 @@ typedef enum {
 	OPT_poll_fds,
 
 	OPT_prefetch,
-	OPT_prefetch_ops,
 	OPT_prefetch_l3_size,
+	OPT_prefetch_method,
+	OPT_prefetch_ops,
 
 	OPT_prctl,
 	OPT_prctl_ops,
@@ -1752,6 +1777,7 @@ typedef enum {
 	OPT_qsort,
 	OPT_qsort_ops,
 	OPT_qsort_integers,
+	OPT_qsort_method,
 
 	OPT_quota,
 	OPT_quota_ops,
@@ -2126,6 +2152,7 @@ typedef enum {
 
 	OPT_tsc,
 	OPT_tsc_ops,
+	OPT_tsc_lfence,
 
 	OPT_tsearch,
 	OPT_tsearch_ops,
@@ -2147,6 +2174,9 @@ typedef enum {
 	OPT_udp_flood_ops,
 	OPT_udp_flood_domain,
 	OPT_udp_flood_if,
+
+	OPT_umount,
+	OPT_umount_ops,
 
 	OPT_unshare,
 	OPT_unshare_ops,
@@ -2227,6 +2257,9 @@ typedef enum {
 
 	OPT_wait,
 	OPT_wait_ops,
+
+	OPT_waitcpu,
+	OPT_waitcpu_ops,
 
 	OPT_watchdog,
 	OPT_watchdog_ops,
@@ -2323,54 +2356,59 @@ static inline void ALWAYS_INLINE OPTIMIZE3 keep_stressing_set_flag(const bool se
 }
 
 /*
+ *  add_counter()
+ *	add inc to the stessor bogo ops counter
+ */
+static inline void ALWAYS_INLINE OPTIMIZE3 add_counter(const stress_args_t *args, const uint64_t inc)
+{
+	register stress_counter_info_t * const ci = args->ci;
+
+	ci->counter_ready = false;
+	shim_mb();
+	ci->counter += inc;
+	shim_mb();
+	ci->counter_ready = true;
+}
+
+/*
  *  inc_counter()
  *	increment the stessor bogo ops counter
  */
-static inline void ALWAYS_INLINE inc_counter(const stress_args_t *args)
+static inline void ALWAYS_INLINE OPTIMIZE3 inc_counter(const stress_args_t *args)
 {
-	*args->counter_ready = false;
+	register stress_counter_info_t * const ci = args->ci;
+
+	ci->counter_ready = false;
 	shim_mb();
-	(*(args->counter))++;
+	ci->counter++;
 	shim_mb();
-	*args->counter_ready = true;
-	shim_mb();
+	ci->counter_ready = true;
 }
 
 /*
  *  get_counter()
  *	get the stessor bogo ops counter
  */
-static inline uint64_t ALWAYS_INLINE get_counter(const stress_args_t *args)
+static inline uint64_t ALWAYS_INLINE OPTIMIZE3 get_counter(const stress_args_t *args)
 {
-	return *args->counter;
+	register stress_counter_info_t * const ci = args->ci;
+
+	return ci->counter;
 }
 
 /*
  *  set_counter()
  *	set the stessor bogo ops counter
  */
-static inline void ALWAYS_INLINE set_counter(const stress_args_t *args, const uint64_t val)
+static inline void ALWAYS_INLINE OPTIMIZE3 set_counter(const stress_args_t *args, const uint64_t val)
 {
-	*args->counter_ready = false;
-	shim_mb();
-	*args->counter = val;
-	shim_mb();
-	*args->counter_ready = true;
-	shim_mb();
-}
+	register stress_counter_info_t * const ci = args->ci;
 
-/*
- *  add_counter()
- *	add inc to the stessor bogo ops counter
- */
-static inline void ALWAYS_INLINE add_counter(const stress_args_t *args, const uint64_t inc)
-{
-	*args->counter_ready = false;
+	ci->counter_ready = false;
 	shim_mb();
-	*args->counter += inc;
+	ci->counter = val;
 	shim_mb();
-	*args->counter_ready = true;
-	shim_mb();
+	ci->counter_ready = true;
 }
 
 /*
@@ -2379,8 +2417,29 @@ static inline void ALWAYS_INLINE add_counter(const stress_args_t *args, const ui
  */
 static inline bool ALWAYS_INLINE OPTIMIZE3 keep_stressing(const stress_args_t *args)
 {
-	return (LIKELY(g_keep_stressing_flag) &&
-		LIKELY(!args->max_ops || (get_counter(args) < args->max_ops)));
+	if (UNLIKELY(!g_keep_stressing_flag))
+		return false;
+	if (LIKELY(args->max_ops == 0))
+		return true;
+	return get_counter(args) < args->max_ops;
+}
+
+/*
+ *  add_counter_lock()
+ *	add val to the stessor bogo ops counter with lock, return true
+ *	if keep_stressing is true
+ */
+static inline void add_counter_lock(const stress_args_t *args, void *lock, const int64_t val)
+{
+	/*
+	 *  Failure in lock acquire, don't bump counter
+	 *  and get racy keep_stressing state, that's
+	 *  probably the best we can do in this failure mode
+	 */
+	if (stress_lock_acquire(lock) < 0)
+		return;
+	add_counter(args, val);
+	stress_lock_release(lock);
 }
 
 /*
@@ -2457,6 +2516,11 @@ extern uint8_t stress_mwc8modn(const uint8_t max);
 extern uint16_t stress_mwc16modn(const uint16_t max);
 extern uint32_t stress_mwc32modn(const uint32_t max);
 extern uint64_t stress_mwc64modn(const uint64_t max);
+/* Fast random numbers 1..max inclusive, where max maybe power of 2  */
+extern uint8_t stress_mwc8modn_maybe_pwr2(const uint8_t max);
+extern uint16_t stress_mwc16modn_maybe_pwr2(const uint16_t max);
+extern uint32_t stress_mwc32modn_maybe_pwr2(const uint32_t max);
+extern uint64_t stress_mwc64modn_maybe_pwr2(const uint64_t max);
 extern void stress_mwc_seed(void);
 extern void stress_mwc_set_seed(const uint32_t w, const uint32_t z);
 extern void stress_mwc_get_seed(uint32_t *w, uint32_t *z);
@@ -2498,6 +2562,9 @@ extern void stress_clear_warn_once(void);
 extern WARN_UNUSED size_t stress_flag_permutation(const int flags, int **permutations);
 extern WARN_UNUSED const char *stress_fs_magic_to_name(const unsigned long fs_magic);
 extern WARN_UNUSED const char *stress_fs_type(const char *filename);
+extern void stress_close_fds(int *fds, const size_t n);
+extern void stress_file_rw_hint_short(const int fd);
+extern void stress_set_vma_anon_name(const void *addr, const size_t size, const char *name);
 
 /* Memory locking */
 extern int stress_mlock_region(const void *addr_start, const void *addr_end);
@@ -2561,8 +2628,6 @@ extern void stress_temp_path_free(void);
 extern void stress_rndstr(char *str, size_t len);
 extern void stress_rndbuf(void *str, const size_t len);
 extern void stress_uint8rnd4(uint8_t *data, const size_t len);
-extern void stress_get_cache_size(uint64_t *l2, uint64_t *l3);
-extern void stress_get_llc_size(size_t *llc_size, size_t *cache_line_size);
 extern WARN_UNUSED unsigned int stress_get_cpu(void);
 extern WARN_UNUSED const char *stress_get_compiler(void);
 extern WARN_UNUSED const char *stress_get_uname_info(void);
@@ -2577,6 +2642,7 @@ extern WARN_UNUSED int stress_set_nonblock(const int fd);
 extern WARN_UNUSED ssize_t system_read(const char *path, char *buf,
 	const size_t buf_len);
 extern WARN_UNUSED bool stress_is_prime64(const uint64_t n);
+extern WARN_UNUSED uint64_t stress_get_next_prime64(const uint64_t n);
 extern WARN_UNUSED uint64_t stress_get_prime64(const uint64_t n);
 extern WARN_UNUSED size_t stress_get_file_limit(void);
 extern WARN_UNUSED size_t stress_get_max_file_limit(void);
@@ -2664,6 +2730,10 @@ extern WARN_UNUSED bool stress_redo_fork(const int err);
 extern void stress_sighandler_nop(int sig);
 extern int stress_killpid(const pid_t pid);
 extern WARN_UNUSED bool stress_low_memory(const size_t requested);
+extern void stress_ksm_memory_merge(const int flag);
+
+/* process information */
+extern void stress_dump_processes(void);
 
 /* kernel module helpers */
 extern int stress_module_load(const char *name, const char *alias,
@@ -2875,6 +2945,7 @@ extern int shim_clone3(struct shim_clone_args *cl_args, size_t size);
 extern int shim_close_range(unsigned int fd, unsigned int max_fd, unsigned int flags);
 extern ssize_t shim_copy_file_range(int fd_in, shim_loff_t *off_in,
 	int fd_out, shim_loff_t *off_out, size_t len, unsigned int flags);
+extern int shim_delete_module(const char *name, unsigned int flags);
 extern int shim_dup3(int oldfd, int newfd, int flags);
 extern int shim_execveat(int dir_fd, const char *pathname, char *const argv[],
 	char *const envp[], int flags);
@@ -2882,6 +2953,7 @@ extern void shim_exit_group(int status);
 extern int shim_fallocate(int fd, int mode, off_t offset, off_t len);
 extern int shim_fdatasync(int fd);
 extern ssize_t shim_fgetxattr(int fd, const char *name, void *value, size_t size);
+extern int shim_finit_module(int fd, const char *uargs, int flags);
 extern ssize_t shim_flistxattr(int fd, char *list, size_t size);
 extern int shim_fsconfig(int fd, unsigned int cmd, const char *key,
 	const void *value, int aux);

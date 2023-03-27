@@ -165,7 +165,7 @@ static void stress_pthread_tid_address(const stress_args_t *args)
     defined(HAVE_SYSCALL)
 	__kernel_ulong_t tid_addr = 0;
 
-	if (prctl(PR_GET_TID_ADDRESS, &tid_addr) == 0) {
+	if (prctl(PR_GET_TID_ADDRESS, &tid_addr, 0, 0, 0) == 0) {
 		if (tid_addr) {
 			pid_t tid1, tid2;
 
@@ -205,18 +205,15 @@ static void *stress_pthread_func(void *parg)
 #endif
 #if defined(HAVE_GET_ROBUST_LIST) &&	\
     defined(HAVE_LINUX_FUTEX_H)
-	struct robust_list_head *head;
+	struct robust_list_head *head, new_head;
 	size_t len;
 #endif
 	const stress_pthread_args_t *spa = (stress_pthread_args_t *)parg;
 	const stress_args_t *args = spa->args;
 	stress_pthread_info_t *pthread_info = (stress_pthread_info_t *)spa->data;
-	char str[16];
 
 	pthread_info->t_run = t_run;
-
-	(void)snprintf(str, sizeof(str), "%" PRIu64, pthread_info->index);
-	stress_set_proc_state_str(args->name, str);
+	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 #if defined(HAVE_GET_ROBUST_LIST) &&	\
     defined(HAVE_LINUX_FUTEX_H)
@@ -232,19 +229,26 @@ static void *stress_pthread_func(void *parg)
 	} else {
 #if defined(HAVE_SET_ROBUST_LIST) &&	\
     defined(HAVE_LINUX_FUTEX_H)
-		if (sys_set_robust_list(head, len) < 0) {
-			if (errno != ENOSYS) {
-				pr_fail("%s: set_robust_list failed, tid=%d, errno=%d (%s)\n",
-					args->name, (int)tid, errno, strerror(errno));
-				goto die;
+		if (len > 0) {
+			(void)memcpy(&new_head, head, len);
+
+			/* Currently disabled, valgrind complains that head is out of range */
+			if (sys_set_robust_list(&new_head, len) < 0) {
+				if (errno != ENOSYS) {
+					pr_fail("%s: set_robust_list failed, tid=%d, errno=%d (%s)\n",
+						args->name, (int)tid, errno, strerror(errno));
+						goto die;
+				}
 			}
+
+			/* Exercise invalid zero length */
+			VOID_RET(long, sys_set_robust_list(&new_head, 0));
+
+#if 0
+			/* Exercise invalid length */
+			VOID_RET(long, sys_set_robust_list(new_head, (size_t)-1));
+#endif
 		}
-
-		/* Exercise invalid zero length */
-		VOID_RET(long, sys_set_robust_list(head, 0));
-
-		/* Exercise invalid length */
-		VOID_RET(long, sys_set_robust_list(head, (size_t)-1));
 #endif
 	/*
 	 *  Check get_robust_list with an invalid PID
@@ -409,6 +413,7 @@ die:
  */
 static int stress_pthread(const stress_args_t *args)
 {
+	char msg[64];
 	bool locked = false;
 	uint64_t limited = 0, attempted = 0, maximum = 0;
 	uint64_t pthread_max = DEFAULT_PTHREAD;
@@ -655,17 +660,10 @@ reap:
 
 	average = (count > 0.0) ? duration / count : 0.0;
 	stress_metrics_set(args, 0, "nanosecs to start a pthread", average * STRESS_DBL_NANOSECOND);
-
-	pr_inf("%s: maximum of %" PRIu64 " concurrent pthreads created\n",
-		args->name, maximum);
-	if (limited) {
-		pr_inf("%s: %.2f%% of iterations could not reach "
-			"requested %" PRIu64 " threads (instance %"
-			PRIu32 ")\n",
-			args->name,
-			100.0 * (double)limited / (double)attempted,
-			pthread_max, args->instance);
-	}
+	snprintf(msg, sizeof(msg), "%% of %" PRIu64 " pthreads created",
+		pthread_max * args->num_instances);
+	if (attempted > 0)
+		stress_metrics_set(args, 1, msg, 100.0 * (double)(attempted - limited) / (double)attempted);
 
 	stress_set_proc_state(args->name, STRESS_STATE_DEINIT);
 

@@ -65,7 +65,7 @@ static int stress_bsearch(const stress_args_t *args)
 	int32_t *data, *ptr;
 	size_t n, n8, i;
 	uint64_t bsearch_size = DEFAULT_BSEARCH_SIZE;
-	double rate, t, duration = 0.0, count = 0.0, sorted = 0.0;
+	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
 
 	if (!stress_get_setting("bsearch-size", &bsearch_size)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -86,13 +86,15 @@ static int stress_bsearch(const stress_args_t *args)
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	do {
+		double t;
+
 		stress_sort_data_int32_init(data, n);
 		stress_sort_compare_reset();
 		t = stress_time_now();
 		for (ptr = data, i = 0; i < n; i++, ptr++) {
 			int32_t *result;
 
-			result = bsearch(ptr, data, n, sizeof(*ptr), stress_sort_cmp_int32);
+			result = bsearch(ptr, data, n, sizeof(*ptr), stress_sort_cmp_fwd_int32);
 			if (g_opt_flags & OPT_FLAGS_VERIFY) {
 				if (result == NULL)
 					pr_fail("%s: element %zu could not be found\n",

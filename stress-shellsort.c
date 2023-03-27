@@ -149,10 +149,6 @@ static int stress_shellsort(const stress_args_t *args)
 		return EXIT_NO_RESOURCE;
 	}
 
-	if (stress_sighandler(args->name, SIGALRM, stress_shellsort_handler, &old_action) < 0) {
-		free(data);
-		return EXIT_FAILURE;
-	}
 
 	ret = sigsetjmp(jmp_env, 1);
 	if (ret) {
@@ -161,6 +157,10 @@ static int stress_shellsort(const stress_args_t *args)
 		 */
 		(void)stress_sigrestore(args->name, SIGALRM, &old_action);
 		goto tidy;
+	}
+	if (stress_sighandler(args->name, SIGALRM, stress_shellsort_handler, &old_action) < 0) {
+		free(data);
+		return EXIT_FAILURE;
 	}
 
 	stress_sort_data_int32_init(data, n);
@@ -175,7 +175,7 @@ static int stress_shellsort(const stress_args_t *args)
 		/* Sort "random" data */
 		stress_sort_compare_reset();
 		t = stress_time_now();
-		if (shellsort(data, n, sizeof(*data), stress_sort_cmp_int32) < 0) {
+		if (shellsort(data, n, sizeof(*data), stress_sort_cmp_fwd_int32) < 0) {
 			pr_fail("%s: shellsort of random data failed: %d (%s)\n",
 				args->name, errno, strerror(errno));
 		} else {
@@ -221,17 +221,10 @@ static int stress_shellsort(const stress_args_t *args)
 		}
 		if (!keep_stressing_flag())
 			break;
-		/* And re-order by byte compare */
+
+		/* And re-order */
+		stress_sort_data_int32_mangle(data, n);
 		stress_sort_compare_reset();
-		t = stress_time_now();
-		if (shellsort(data, n * 4, sizeof(uint8_t), stress_sort_cmp_int8) < 0) {
-			pr_fail("%s: shellsort failed: %d (%s)\n",
-				args->name, errno, strerror(errno));
-		} else {
-			duration += stress_time_now() - t;
-			count += (double)stress_sort_compare_get();
-			sorted += (double)n;
-		}
 
 		/* Reverse sort this again */
 		stress_sort_compare_reset();

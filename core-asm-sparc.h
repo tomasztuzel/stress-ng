@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022-2023 Colin Ian King.
+ * Copyright (C) 2023      Colin Ian King.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -16,19 +16,34 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
  */
+#ifndef CORE_ASM_SPARC_H
+#define CORE_ASM_SPARC_H
 
-static void __attribute__((optimize("unroll-loops"))) unroll(char *buffer)
+#include "stress-ng.h"
+#include "core-arch.h"
+
+#if defined(STRESS_ARCH_SPARC)
+
+#if defined(HAVE_ASM_SPARC_TICK)
+static inline uint64_t stress_asm_sparc_tick(void)
 {
-	int i;
+	register uint64_t ticks;
 
-	for (i = 0; i < 1024; i++)
-		buffer[i] = i;
+	__asm__ __volatile__("rd %%tick, %0"
+			     : "=r" (ticks));
+	return (uint64_t)ticks;
 }
+#endif
 
-int main(void)
+#if defined(HAVE_ASM_SPARC_MEMBAR)
+static inline void stress_asm_sparc_membar(void)
 {
-	char buffer[1024];
-
-	unroll(buffer);
-	return 0;
+         __asm__ __volatile__ ("membar #StoreLoad" : : : "memory");
 }
+#endif
+
+/* #if defined(STRESS_ARCH_SPARC) */
+#endif
+
+/* #ifndef CORE_ASM_SPARC_H */
+#endif

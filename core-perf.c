@@ -78,16 +78,18 @@ typedef struct {
 #define PERF_INFO_SW(config, label)	\
 	{ PERF_TYPE_SOFTWARE, PERF_COUNT_ ## config, NULL, label }
 
+#define PERF_INFO_HW_CACHE_CONFIG(cache_id, op_id, result_id)	\
+	  (PERF_COUNT_HW_CACHE_ ## cache_id) |			\
+	  ((PERF_COUNT_HW_CACHE_OP_ ## op_id) << 8) |		\
+	  ((PERF_COUNT_HW_CACHE_RESULT_ ## result_id) << 16)	\
+
 /* Hardware Cache */
 #define PERF_INFO_HW_C(cache_id, op_id, result_id, label)	\
 	{ PERF_TYPE_HW_CACHE, 					\
-	  (PERF_COUNT_HW_CACHE_ ## cache_id) |			\
-	  ((PERF_COUNT_HW_CACHE_OP_ ## op_id) << 8) |		\
-	  ((PERF_COUNT_HW_CACHE_RESULT_ ## result_id) << 16),	\
+	  PERF_INFO_HW_CACHE_CONFIG(cache_id, op_id, result_id),\
 	  NULL, label }
 
 #define STRESS_PERF_DEFINED(x) STRESS_PERF_COUNT_ ## x
-
 
 /*
  *  Perf scaling factors
@@ -126,7 +128,7 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_HW(HW_STALLED_CYCLES_FRONTEND,"Stalled Cycles Frontend"),
 #endif
 #if STRESS_PERF_DEFINED(HW_STALLED_CYCLES_BACKEND)
-	PERF_INFO_HW(HW_STALLED_CYCLES_BACKEND,"Stalled Cycles Backend"),
+	PERF_INFO_HW(HW_STALLED_CYCLES_BACKEND,	"Stalled Cycles Backend"),
 #endif
 #if STRESS_PERF_DEFINED(HW_BUS_CYCLES)
 	PERF_INFO_HW(HW_BUS_CYCLES,		"Bus Cycles"),
@@ -134,7 +136,6 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 #if STRESS_PERF_DEFINED(HW_REF_CPU_CYCLES)
 	PERF_INFO_HW(HW_REF_CPU_CYCLES,		"Total Cycles"),
 #endif
-
 #if STRESS_PERF_DEFINED(HW_CACHE_REFERENCES)
 	PERF_INFO_HW(HW_CACHE_REFERENCES,	"Cache References"),
 #endif
@@ -181,7 +182,7 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_HW_C(DTLB, PREFETCH, MISS,	"Cache DTLB Prefetch Miss"),
 #endif
 
-#if STRESS_PERF_DEFINED(HW_CACHE_ITLB)
+#if STRESS_PERF_DEFINED(HW_CACHE_ITLB) && 0
 	PERF_INFO_HW_C(ITLB, READ, ACCESS,	"Cache ITLB Read"),
 	PERF_INFO_HW_C(ITLB, READ, MISS,	"Cache ITLB Read Miss"),
 	PERF_INFO_HW_C(ITLB, WRITE, ACCESS,	"Cache ITLB Write"),
@@ -251,7 +252,9 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_TP("raw_syscalls/sys_exit",		"System Call Exit"),
 
 	/* This perf metric causes 5.4+ kernel hangs, disable it for now */
-	/* PERF_INFO_TP("tlb/tlb_flush",		"TLB Flushes"), */
+#if 0
+	PERF_INFO_TP("tlb/tlb_flush",			"TLB Flushes"),
+#endif
 	PERF_INFO_TP("kmem/kmalloc",			"Kmalloc"),
 	PERF_INFO_TP("kmem/kmalloc_node",		"Kmalloc Node"),
 	PERF_INFO_TP("kmem/kfree",			"Kfree"),
@@ -261,10 +264,15 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_TP("kmem/mm_page_alloc",		"MM Page Alloc"),
 	PERF_INFO_TP("kmem/mm_page_free",		"MM Page Free"),
 
-	PERF_INFO_TP("mmap_lock/mmap_lock_start_locking",	"MMAP lock start"),
+	PERF_INFO_TP("mmap_lock/mmap_lock_start_locking","MMAP lock start"),
 	PERF_INFO_TP("mmap_lock/mmap_lock_released",	"MMAP lock release"),
+#if 0
+	PERF_INFO_TP("mmap_lock/mmap_lock_acquire_returned","MMAP lock acquire"),
+#endif
 
 	PERF_INFO_TP("rcu/rcu_utilization",		"RCU Utilization"),
+	PERF_INFO_TP("rcu/rcu_stall_warning",		"RCU Stall Warning"),
+	PERF_INFO_TP("rcu/rcu_preempt_task",		"RCU Preempt Task"),
 
 	PERF_INFO_TP("sched/sched_migrate_task",	"Sched Migrate Task"),
 	PERF_INFO_TP("sched/sched_move_numa",		"Sched Move NUMA"),
@@ -277,6 +285,9 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_TP("sched/sched_process_wait",	"Sched Proc Wait"),
 	PERF_INFO_TP("sched/sched_switch",		"Sched Switch"),
 
+	PERF_INFO_TP("task/task_newtask",		"New Task"),
+	PERF_INFO_TP("context_tracking/user_exit",	"Context User Exit"),
+
 	PERF_INFO_TP("signal/signal_generate",		"Signal Generate"),
 	PERF_INFO_TP("signal/signal_deliver",		"Signal Deliver"),
 
@@ -286,7 +297,11 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 	PERF_INFO_TP("irq/softirq_exit",		"Soft IRQ Exit"),
 	PERF_INFO_TP("nmi/nmi_handler",			"NMI handler"),
 
-	PERF_INFO_TP("block/block_bio_complete",	"Block BIO complete"),
+	PERF_INFO_TP("block/block_bio_complete",	"Block BIO Complete"),
+#if 0
+	PERF_INFO_TP("iomap/iomap_readpage",		"IOMAP Read Page"),
+	PERF_INFO_TP("iomap/iomap_writepage",		"IOMAP Write Page"),
+#endif
 
 	PERF_INFO_TP("io_uring/io_uring_submit_sqe",	"IO uring submit"),
 	PERF_INFO_TP("io_uring/io_uring_complete",	"IO uring complete"),
@@ -311,11 +326,23 @@ static stress_perf_info_t perf_info[STRESS_PERF_MAX] = {
 
 	PERF_INFO_TP("oom/compact_retry",		"OOM Compact Retry"),
 	PERF_INFO_TP("oom/wake_reaper",			"OOM Wake Reaper"),
+	PERF_INFO_TP("oom/oom_score_adj_update",	"OOM Score Adjust Update"),
 
 	PERF_INFO_TP("thermal/thermal_zone_trip",	"Thermal Zone Trip"),
 
 	{ 0, 0, NULL, NULL }
 };
+
+static inline size_t stress_perf_info_find(const unsigned int type, const unsigned long config)
+{
+	size_t i;
+
+	for (i = 0; i < STRESS_PERF_MAX && perf_info[i].label; i++) {
+		if ((perf_info[i].type == type) && (perf_info[i].config == config))
+			return i;
+	}
+	return STRESS_PERF_MAX;
+}
 
 /*
  *  stress_perf_type_tracepoint_resolve_config()
@@ -608,11 +635,62 @@ static const char *stress_perf_stat_scale(const uint64_t counter, const double d
 	}
 	scaled /= scale;
 
-	(void)snprintf(buffer, sizeof(buffer), "%11.2f %-5s",
+	(void)snprintf(buffer, sizeof(buffer), "%11.3f %-5s",
 		scaled, suffix);
 
 	return buffer;
 }
+
+/*
+ *  Compare type + config relative to another reference type and config
+ */
+typedef struct {
+	const unsigned int	type;
+	const unsigned long	config;
+	const unsigned int	ref_type;
+	const unsigned long	ref_config;
+	const bool		percent;	/* scale by 100.0 for percentages? */
+	const char 		*fmt;		/* snprintf format */
+} perf_relative_t;
+
+static const perf_relative_t perf_relatives[] = {
+	{ PERF_TYPE_HARDWARE,	PERF_COUNT_HW_INSTRUCTIONS,
+	  PERF_TYPE_HARDWARE,	PERF_COUNT_HW_CPU_CYCLES,
+	  false, " (%.3f instr. per cycle)" },
+	{ PERF_TYPE_HARDWARE,	PERF_COUNT_HW_CACHE_MISSES,
+	  PERF_TYPE_HARDWARE,	PERF_COUNT_HW_CACHE_REFERENCES,
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HARDWARE,	PERF_COUNT_HW_BRANCH_MISSES,
+	  PERF_TYPE_HARDWARE,	PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(L1D, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(L1D, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(LL, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(LL, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(LL, WRITE, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(LL, WRITE, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(DTLB, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(DTLB, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(DTLB, WRITE, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(DTLB, WRITE, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(ITLB, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(ITLB, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(BPU, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(BPU, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(NODE, READ, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(NODE, READ, ACCESS),
+	  true, " (%6.3f%%)" },
+	{ PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(NODE, WRITE, MISS),
+	  PERF_TYPE_HW_CACHE,	PERF_INFO_HW_CACHE_CONFIG(NODE, WRITE, ACCESS),
+	  true, " (%6.3f%%)" },
+};
 
 /*
  *  stress_perf_stat_dump()
@@ -632,9 +710,6 @@ void stress_perf_stat_dump(FILE *yaml, stress_stressor_t *stressors_list, const 
 	for (ss = stressors_list; ss; ss = ss->next) {
 		int p;
 		uint64_t counter_totals[STRESS_PERF_MAX];
-		uint64_t total_cpu_cycles = 0;
-		uint64_t total_cache_refs = 0;
-		uint64_t total_branches = 0;
 		bool got_data = false;
 		char *munged;
 
@@ -658,16 +733,6 @@ void stress_perf_stat_dump(FILE *yaml, stress_stressor_t *stressors_list, const 
 				counter_totals[p] += counter;
 				got_data |= (counter > 0);
 			}
-			if (perf_info[p].type == PERF_TYPE_HARDWARE) {
-				unsigned long config = perf_info[p].config;
-
-				if (config == PERF_COUNT_HW_CPU_CYCLES)
-					total_cpu_cycles = counter_totals[p];
-				else if (config == PERF_COUNT_HW_CACHE_REFERENCES)
-					total_cache_refs = counter_totals[p];
-				else if (config == PERF_COUNT_HW_BRANCH_INSTRUCTIONS)
-					total_branches = counter_totals[p];
-			}
 		}
 
 		if (!got_data)
@@ -686,26 +751,24 @@ void stress_perf_stat_dump(FILE *yaml, stress_stressor_t *stressors_list, const 
 				char extra[32];
 				char yaml_label[128];
 				*extra = '\0';
+				size_t i;
 
 				no_perf_stats = false;
 
-				if (perf_info[p].type == PERF_TYPE_HARDWARE) {
-					unsigned long config = perf_info[p].config;
-					if ((config == PERF_COUNT_HW_INSTRUCTIONS) &&
-					    (total_cpu_cycles > 0))
-						(void)snprintf(extra, sizeof(extra),
-							" (%.3f instr. per cycle)",
-							(double)ct / (double)total_cpu_cycles);
-					else if ((config == PERF_COUNT_HW_CACHE_MISSES) &&
-					     (total_cache_refs > 0))
-						(void)snprintf(extra, sizeof(extra),
-							" (%5.2f%%)",
-							100.0 * (double)ct / (double)total_cache_refs);
-					else if ((config == PERF_COUNT_HW_BRANCH_MISSES) &&
-					    (total_branches > 0))
-						(void)snprintf(extra, sizeof(extra),
-							" (%5.2f%%)",
-							100.0 * (double)ct / (double)total_branches);
+				for (i = 0; i < SIZEOF_ARRAY(perf_relatives); i++) {
+					if ((perf_info[p].type == perf_relatives[i].type) &&
+					    (perf_info[p].config == perf_relatives[i].config)) {
+						const size_t idx = stress_perf_info_find(
+									perf_relatives[i].ref_type,
+									perf_relatives[i].ref_config);
+
+						if ((idx < STRESS_PERF_MAX) &&
+						    (counter_totals[idx] > 0))
+							(void)snprintf(extra, sizeof(extra),
+									perf_relatives[i].fmt,
+									(perf_relatives[i].percent ? 100.0 : 1.0) *
+									(double)ct / (double)counter_totals[idx]);
+					}
 				}
 
 				pr_inf("%'26" PRIu64 " %-24s %s%s\n",

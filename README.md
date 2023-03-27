@@ -14,7 +14,7 @@ the various operating system kernel interfaces. Stress-ng features:
     OpenSUSE, Ubuntu, etc..), Solaris, FreeBSD, NetBSD, OpenBSD, DragonFlyBSD,
     Minix, Android, MacOS X, Serenity OS, GNU/Hurd, Haiku, Windows Subsystem
     for Linux and SunOs/Dilos/Solaris.
-    with gcc, clang, icc, tcc and pcc.
+    with gcc, musl-gcc, clang, icc, icx, tcc and pcc.
   * tested on alpha, armel, armhf, arm64, hppa, i386, m68k, mips32, mips64,
     power32, ppc64el, risc-v, sh4, s390x, sparc64, x86-64
 
@@ -269,10 +269,16 @@ To build with the musl C library:
 	CC=musl-gcc make
 ```
 
-To build with the Intel C compiler use:
+To build with the Intel C compiler icc use:
 ```
 	make clean
 	CC=icc make
+```
+
+To build with the Intel C compiler icx use:
+```
+	make clean
+	CC=icx make
 ```
 
 ## Contributing to stress-ng:
@@ -405,6 +411,8 @@ stress-ng has found Kernel and QEMU bugs/regressions and appropriate fixes have 
 * [mm/huge_memory: do not clobber swp_entry_t during THP split](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=71e2d666ef85d51834d658830f823560c402b8b6)
 * [qemu-system-m68k segfaults on opcode 0x4848](https://gitlab.com/qemu-project/qemu/-/issues/1462)
 * [AppArmor: -42.5% regression of stress-ng.kill.ops_per_sec due to commit](https://lkml.org/lkml/2022/12/31/27)
+* [clocksource: Suspend the watchdog temporarily when high read lantency detected](https://lore.kernel.org/lkml/20221220082512.186283-1-feng.tang@intel.com/t/)
+* [rtmutex: Ensure that the top waiter is always woken up](https://git.kernel.org/cgit/linux/kernel/git/torvalds/linux.git/commit/?id=db370a8b9f67ae5f17e3d5482493294467784504)
 
 ## Kernel improvements that used stress-ng
 
@@ -500,7 +508,36 @@ stress-ng has found Kernel and QEMU bugs/regressions and appropriate fixes have 
 * [Design and Implementation of Machine Learning-Based Fault Prediction System in Cloud Infrastructure](https://www.mdpi.com/2079-9292/11/22/3765)
 * [The TSN Building Blocks in Linux](https://arxiv.org/pdf/2211.14138.pdf)
 * [A Comprehensive Study on Optimizing Systems with Data Processing Units](https://arxiv.org/pdf/2301.06070.pdf)
+* [Sage: Practical & Scalable ML-Driven Performance Debugging in Microservices](https://people.csail.mit.edu/delimitrou/papers/2021.asplos.sage.pdf)
+* [Estimating Cloud Application Performance Based on Micro-Benchmark Profiling](https://research.chalmers.se/publication/506903/file/506903_Fulltext.pdf)
+* [PSPRAY: Timing Side-Channel based Linux Kernel Heap Exploitation Technique](https://lifeasageek.github.io/papers/yoochan-pspray.pdf)
+* [A Generalized Approach For Practical Task Allocation Using A MAPE-K Control Loop](https://www.marquez-barja.com/images/papers/A_Generalized_Approach_For_Software_Placement_In_The_Fog_Using_A_MAPE_K_Control_Loop-AuthorVersion.pdf)]
+* [Analysis and Detection of Cache-Based Exploits](https://ssg.lancs.ac.uk/wp-content/uploads/2020/07/analysis_and_detection_vateva.pdf)
+* [Robust and accurate performance anomaly detection and prediction for cloud applications: a novel ensemble learning-based framework](https://journalofcloudcomputing.springeropen.com/articles/10.1186/s13677-022-00383-6#Fn4)
+* [kMVX: Detecting Kernel Information Leaks with Multi-variant Execution](https://research.vu.nl/ws/files/122357910/KMVX.pdf)
+* [Feasibility Study for a Python-Based Embedded Real-Time Control System](https://www.mdpi.com/2079-9292/12/6/1426)
 
 I am keen to add to the stress-ng project page any citations to research or
 projects that use stress-ng.  I also appreciate information concerning kernel
 bugs or performance regressions found with stress-ng.
+
+## Contributors
+
+Many thanks to the following contributors to stress-ng (in alphabetical order):
+
+Abdul Haleem, Aboorva Devarajan, Adriand Martin, Adrian Ratiu,
+Aleksandar N. Kostadinov, Alexander Kanavin, Alexandru Ardelean,
+Alfonso Sánchez-Beato, Allen H, André Wild, Anton Eliasson,
+Arjan van de Ven, Baruch Siach, Bryan W. Lewis, Camille Constans,
+Carlos Santos, Christian Ehrhardt, Christopher Brown, Chunyu Hu,
+Danilo Krummrich, Davidson Francis, David Turner, Dominik B Czarnota,
+Dorinda Bassey, Eric Lin, Erik Stahlman, Fabien Malfoy, Fabrice Fontaine,
+Florian Weimer, Francis Laniel, Guilherme Janczak, Iyán Méndez Veiga,
+James Hunt, Jan Luebbe, Jianshen Liu, John Kacur, Jules Maselbas,
+Julien Olivain, Kenny Gong, Khalid Elmously, Khem Raj, Luca Pizzamiglio,
+Luis Chamberlain, Luis Henriques, Matthew Tippett, Mauricio Faria de Oliveira,
+Maxime Chevallier, Maya Rashish, Mayuresh Chitale, Meysam Azad,
+Mike Koreneff, Nick Hanley, Paul Menzel, Piyush Goyal, Ralf Ramsauer,
+Rosen Penev, Siddhesh Poyarekar, Thadeu Lima de Souza Cascardo,
+Thia Wyrod, Thinh Tran, Tim Gardner, Tim Gates, Tim Orling,
+Tommi Rantala, Witold Baryluk, Yong-Xuan Wang, Zhiyi Sun.

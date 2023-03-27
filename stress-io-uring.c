@@ -607,7 +607,7 @@ static void stress_io_uring_statx_setup(
 	stress_io_uring_file_t *io_uring_file,
 	struct io_uring_sqe *sqe)
 {
-	shim_statx_t statxbuf;
+	static shim_statx_t statxbuf;
 
 	sqe->opcode = IORING_OP_STATX;
 	sqe->fd = io_uring_file->fd;
@@ -799,6 +799,8 @@ static int stress_io_uring(const stress_args_t *args)
 		goto clean;
 	}
 	(void)shim_unlink(filename);
+
+	stress_file_rw_hint_short(io_uring_file.fd);
 
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 

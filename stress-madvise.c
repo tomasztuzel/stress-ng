@@ -239,9 +239,7 @@ static int stress_random_advise(
 	if (advise == MADV_HWPOISON) {
 		const size_t page_size = args->page_size;
 		const size_t vec_size = (size + page_size - 1) / page_size;
-		size_t i;
 		unsigned char *vec;
-		int ret;
 		uint8_t *ptr = (uint8_t *)addr;
 
 		/*
@@ -257,6 +255,9 @@ static int stress_random_advise(
 
 		vec = (unsigned char *)calloc(vec_size, sizeof(*vec));
 		if (vec) {
+			size_t i;
+			int ret;
+
 			/*
 			 * Don't poison mapping if it's not physically backed
 			 */
@@ -345,7 +346,7 @@ static void *stress_madvise_pages(void *arg)
 		(void)shim_msync(ptr, page_size, MS_ASYNC);
 	}
 	for (n = 0; n < sz; n += page_size) {
-		size_t m = (size_t)(stress_mwc64modn((uint64_t)sz) & ~(page_size - 1));
+		size_t m = (size_t)(stress_mwc64modn_maybe_pwr2((uint64_t)sz) & ~(page_size - 1));
 		void *ptr = (void *)(((uint8_t *)buf) + m);
 		const int advise = stress_random_advise(args, ptr, page_size);
 
@@ -525,6 +526,9 @@ static int stress_madvise(const stress_args_t *args)
 	}
 
 	(void)shim_unlink(filename);
+
+	stress_file_rw_hint_short(fd);
+
 	for (n = 0; n < sz; n += page_size) {
 		VOID_RET(ssize_t, write(fd, page, page_size));
 	}
@@ -660,8 +664,6 @@ madv_free_out:
 			(void)madvise(bad_addr, page_size * 2, MADV_NORMAL);
 		}
 #endif
-
-
 		inc_counter(args);
 	} while (keep_stressing(args));
 

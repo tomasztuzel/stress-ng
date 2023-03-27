@@ -66,7 +66,7 @@ static int stress_lsearch(const stress_args_t *args)
 	int32_t *data, *root;
 	size_t i, max;
 	uint64_t lsearch_size = DEFAULT_LSEARCH_SIZE;
-	double rate, t, duration = 0.0, count = 0.0, sorted = 0.0;
+	double rate, duration = 0.0, count = 0.0, sorted = 0.0;
 
 	if (!stress_get_setting("lsearch-size", &lsearch_size)) {
 		if (g_opt_flags & OPT_FLAGS_MAXIMIZE)
@@ -93,13 +93,14 @@ static int stress_lsearch(const stress_args_t *args)
 	stress_set_proc_state(args->name, STRESS_STATE_RUN);
 
 	do {
+		double t;
 		size_t n = 0;
 
 		stress_sort_data_int32_shuffle(data, max);
 
 		/* Step #1, populate with data */
 		for (i = 0; keep_stressing_flag() && i < max; i++) {
-			VOID_RET(void *, lsearch(&data[i], root, &n, sizeof(*data), stress_sort_cmp_int32));
+			VOID_RET(void *, lsearch(&data[i], root, &n, sizeof(*data), stress_sort_cmp_fwd_int32));
 		}
 		/* Step #2, find */
 		stress_sort_compare_reset();
@@ -107,7 +108,7 @@ static int stress_lsearch(const stress_args_t *args)
 		for (i = 0; keep_stressing_flag() && i < n; i++) {
 			int32_t *result;
 
-			result = lfind(&data[i], root, &n, sizeof(*data), stress_sort_cmp_int32);
+			result = lfind(&data[i], root, &n, sizeof(*data), stress_sort_cmp_fwd_int32);
 			if (g_opt_flags & OPT_FLAGS_VERIFY) {
 				if (result == NULL)
 					pr_fail("%s: element %zu could not be found\n", args->name, i);

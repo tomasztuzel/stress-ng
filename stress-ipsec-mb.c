@@ -40,6 +40,7 @@ static const stress_help_t help[] = {
 };
 
 static int stress_set_ipsec_mb_feature(const char *opt);
+static int stress_set_ipsec_mb_method(const char *opt);
 
 /*
  *  stress_set_ipsec_mb_jobs()
@@ -53,6 +54,13 @@ static int stress_set_ipsec_mb_jobs(const char *opt)
 	stress_check_range("ipsec-mb-jobs", (uint64_t)ipsec_mb_jobs, 1, 65536);
 	return stress_set_setting("ipsec-mb-jobs", TYPE_ID_INT, &ipsec_mb_jobs);
 }
+
+static const stress_opt_set_func_t opt_set_funcs[] = {
+	{ OPT_ipsec_mb_feature,	stress_set_ipsec_mb_feature },
+	{ OPT_ipsec_mb_jobs,	stress_set_ipsec_mb_jobs },
+	{ OPT_ipsec_mb_method,	stress_set_ipsec_mb_method },
+	{ 0,                    NULL }
+};
 
 #if defined(HAVE_INTEL_IPSEC_MB_H) &&	\
     defined(HAVE_LIB_IPSEC_MB) &&	\
@@ -156,8 +164,8 @@ static uint64_t stress_ipsec_mb_features(const stress_args_t *args, MB_MGR *p_mg
 
 		for (i = 0; i < SIZEOF_ARRAY(mb_features); i++) {
 			if ((features & mb_features[i].features) == mb_features[i].features) {
-				strcat(str, " ");
-				strcat(str, mb_features[i].name);
+				shim_strlcat(str, " ", sizeof(str));
+				shim_strlcat(str, mb_features[i].name, sizeof(str));
 			}
 		}
 
@@ -249,9 +257,10 @@ static void stress_jobs_done(
 static void *stress_alloc_aligned(const size_t nmemb, const size_t size, const size_t alignment)
 {
 	const size_t sz = nmemb * size;
-	void *ptr;
 
 #if defined(HAVE_POSIX_MEMALIGN)
+	void *ptr;
+
 	if (posix_memalign(&ptr, alignment, sz) == 0)
 		return ptr;
 #elif defined(HAVE_ALIGNED_ALLOC)
@@ -876,13 +885,6 @@ static int stress_ipsec_mb(const stress_args_t *args)
 	return EXIT_SUCCESS;
 }
 
-static const stress_opt_set_func_t opt_set_funcs[] = {
-	{ OPT_ipsec_mb_feature,	stress_set_ipsec_mb_feature },
-	{ OPT_ipsec_mb_jobs,	stress_set_ipsec_mb_jobs },
-	{ OPT_ipsec_mb_method,	stress_set_ipsec_mb_method },
-	{ 0,                    NULL }
-};
-
 stressor_info_t stress_ipsec_mb_info = {
 	.stressor = stress_ipsec_mb,
 	.supported = stress_ipsec_mb_supported,
@@ -891,6 +893,14 @@ stressor_info_t stress_ipsec_mb_info = {
 	.help = help
 };
 #else
+
+static int stress_set_ipsec_mb_method(const char *opt)
+{
+	(void)opt;
+
+	pr_inf("option --ipsec-mb-method not supported on this system.\n");
+	return -1;
+}
 
 static int stress_set_ipsec_mb_feature(const char *opt)
 {

@@ -18,6 +18,7 @@
  *
  */
 #include "stress-ng.h"
+#include "core-nt-load.h"
 
 static const stress_help_t help[] = {
 	{ NULL,	"brk N",	"start N workers performing rapid brk calls" },
@@ -57,7 +58,7 @@ static int stress_brk_supported(const char *name)
 	 *  so check for this
 	 */
 	ptr = shim_sbrk(0);
-	if ((ptr == (void *)-1) && (errno == ENOSYS)) {
+	if (UNLIKELY((ptr == (void *)-1) && (errno == ENOSYS))) {
 		pr_inf_skip("%s: stressor will be skipped, sbrk() is not "
 			"implemented on this system\n", name);
 		return -1;
@@ -66,7 +67,7 @@ static int stress_brk_supported(const char *name)
 	/*
 	 *  check for brk() not being implemented too
 	 */
-	if ((shim_brk(ptr) < 0) && (errno == ENOSYS)) {
+	if (UNLIKELY((shim_brk(ptr) < 0) && (errno == ENOSYS))) {
 		pr_inf_skip("%s: stressor will be skipped, brk() is not "
 			"implemented on this system\n", name);
 		return -1;
@@ -75,7 +76,36 @@ static int stress_brk_supported(const char *name)
 	return 0;
 }
 
-static int stress_brk_child(const stress_args_t *args, void *context)
+static inline void OPTIMIZE3 stress_brk_page_resident(
+	register uint8_t *addr,
+	const size_t page_size,
+	const bool brk_touch)
+{
+#if defined(__APPLE__)
+	(void)addr;
+	(void)page_size;	
+	(void)brk_touch;
+#endif
+
+#if !defined(__APPLE__)
+	/* Touch page, force it to be resident */
+	if (LIKELY(brk_touch)) {
+#if defined(HAVE_NT_LOAD32)
+		(void)stress_nt_load32((uint32_t *)(addr - page_size));
+#else
+		(void )*(volatile uint8_t *)(addr - page_size);
+#endif
+	}
+#endif
+#if defined(HAVE_MADVISE) &&	\
+    defined(MADV_MERGEABLE)
+	(void)madvise((void *)(addr - page_size), page_size, MADV_MERGEABLE);
+#else
+	UNEXPECTED
+#endif
+}
+
+static int OPTIMIZE3 stress_brk_child(const stress_args_t *args, void *context)
 {
 	uint8_t *start_ptr, *unmap_ptr = NULL;
 	int i = 0;
@@ -84,6 +114,7 @@ static int stress_brk_child(const stress_args_t *args, void *context)
 	double sbrk_exp_duration = 0.0, sbrk_exp_count = 0.0;
 	double sbrk_shr_duration = 0.0, sbrk_shr_count = 0.0;
 	double rate;
+	const bool brk_touch = !brk_context->brk_notouch;
 
 	start_ptr = shim_sbrk(0);
 	if (start_ptr == (void *) -1) {
@@ -103,38 +134,40 @@ static int stress_brk_child(const stress_args_t *args, void *context)
 		uint8_t *ptr;
 		double t;
 
-
 		/* Low memory avoidance, re-start */
 		if ((g_opt_flags & OPT_FLAGS_OOM_AVOID) && stress_low_memory(page_size))
 			VOID_RET(int, shim_brk(start_ptr));
 
 		i++;
-		if (i < 8) {
+		if (LIKELY(i < 8)) {
 			/* Expand brk by 1 page */
 			t = stress_time_now();
 			ptr = shim_sbrk((intptr_t)page_size);
-			if (ptr != (void *)-1) {
+			if (LIKELY(ptr != (void *)-1)) {
 				sbrk_exp_duration += stress_time_now() - t;
 				sbrk_exp_count += 1.0;
 				if (!unmap_ptr)
 					unmap_ptr = ptr;
+				stress_brk_page_resident(ptr, page_size, brk_touch);
 			}
 		} else if (i < 9) {
 			/* brk to same brk position */
 			ptr = shim_sbrk(0);
-			if (shim_brk(ptr) < 0)
+			if (UNLIKELY(shim_brk(ptr) < 0))
 				ptr = (void *)-1;
 		} else if (i < 10) {
 			/* Shrink brk by 1 page */
 			t = stress_time_now();
 			ptr = shim_sbrk(0);
-			if (ptr != (void *)-1) {
+			if (LIKELY(ptr != (void *)-1)) {
 				sbrk_shr_duration += stress_time_now() - t;
 				sbrk_shr_count += 1.0;
 			}
 			ptr -= page_size;
-			if (shim_brk(ptr) < 0)
+			if (UNLIKELY(shim_brk(ptr) < 0))
 				ptr = (void *)-1;
+			else
+				stress_brk_page_resident(ptr, page_size, brk_touch);
 		} else {
 			i = 0;
 			/* remove a page from brk region */
@@ -145,8 +178,8 @@ static int stress_brk_child(const stress_args_t *args, void *context)
 			continue;
 		}
 
-		if (ptr == (void *)-1) {
-			if ((errno == ENOMEM) || (errno == EAGAIN)) {
+		if (UNLIKELY(ptr == (void *)-1)) {
+			if (LIKELY((errno == ENOMEM) || (errno == EAGAIN))) {
 				VOID_RET(int, shim_brk(start_ptr));
 			} else {
 				pr_fail("%s: sbrk(%d) failed: errno=%d (%s)\n",
@@ -154,19 +187,6 @@ static int stress_brk_child(const stress_args_t *args, void *context)
 					strerror(errno));
 				return EXIT_FAILURE;
 			}
-		} else {
-#if !defined(__APPLE__)
-			/* Touch page, force it to be resident */
-			if (!brk_context->brk_notouch)
-				*(ptr - 1) = 0;
-#endif
-
-#if defined(HAVE_MADVISE) &&	\
-    defined(MADV_MERGEABLE)
-			(void)madvise(ptr, page_size, MADV_MERGEABLE);
-#else
-			UNEXPECTED
-#endif
 		}
 		inc_counter(args);
 	} while (keep_stressing(args));
